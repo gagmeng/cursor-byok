@@ -354,6 +354,7 @@ impl ControlService {
             name: input.name.clone(),
             provider_type: input.provider_type,
             base_url: crate::model::normalize_base_url(&input.base_url)?,
+            api_key: input.api_key.clone().unwrap_or_default(),
             has_api_key: input
                 .api_key
                 .as_deref()

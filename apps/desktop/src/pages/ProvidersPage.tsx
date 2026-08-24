@@ -40,7 +40,7 @@ export function ProvidersPage() {
   };
   const openEdit = (provider: Provider) => {
     setEditing(provider);
-    setDraft({ name: provider.name, provider_type: provider.provider_type, base_url: provider.base_url, api_key: "", custom_headers: provider.custom_headers, extra_params: provider.extra_params });
+    setDraft({ name: provider.name, provider_type: provider.provider_type, base_url: provider.base_url, api_key: provider.api_key, custom_headers: provider.custom_headers, extra_params: provider.extra_params });
     setHeadersText(JSON.stringify(provider.custom_headers, null, 2));
     setExtraText(JSON.stringify(provider.extra_params, null, 2));
   };

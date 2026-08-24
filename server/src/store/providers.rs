@@ -492,6 +492,7 @@ fn endpoint_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ProviderEndpoint> {
         name: row.try_get("name")?,
         provider_type: ProviderType::from_str(row.try_get("provider_type")?)?,
         base_url: row.try_get("base_url")?,
+        api_key: api_key.clone(),
         has_api_key: !api_key.is_empty(),
         custom_headers: redact_custom_headers(&headers),
         extra_params,

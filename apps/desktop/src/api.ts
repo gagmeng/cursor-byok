@@ -8,6 +8,7 @@ export interface Provider {
   name: string;
   provider_type: ProviderType;
   base_url: string;
+  api_key: string;
   has_api_key: boolean;
   custom_headers: Record<string, string | null>;
   extra_params: Record<string, unknown>;

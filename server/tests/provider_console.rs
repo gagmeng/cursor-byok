@@ -14,7 +14,7 @@ async fn store() -> (tempfile::TempDir, Store) {
 }
 
 #[tokio::test]
-async fn provider_secret_is_write_only_and_model_hash_is_stable() {
+async fn provider_api_key_is_readable_and_sensitive_headers_stay_redacted() {
     let (_directory, store) = store().await;
     let provider = store
         .create_provider(&ProviderEndpointInput {
@@ -28,7 +28,8 @@ async fn provider_secret_is_write_only_and_model_hash_is_stable() {
         .await
         .unwrap();
     assert!(provider.has_api_key);
-    assert!(!serde_json::to_string(&provider).unwrap().contains("secret"));
+    assert_eq!(provider.api_key, "secret");
+    assert!(!serde_json::to_string(&provider).unwrap().contains("header-secret"));
     assert_eq!(
         provider.custom_headers["authorization"],
         serde_json::Value::Null
