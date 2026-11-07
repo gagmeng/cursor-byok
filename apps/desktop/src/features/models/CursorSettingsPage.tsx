@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, configuredPluginModels, type Model, type ModelInput } from "../../shared/api";
+import { api, configuredPluginModels, type Model, type ModelBadgeSettings, type ModelInput } from "../../shared/api";
+import { CursorBadgeSettings, DEFAULT_MODEL_BADGE_SETTINGS } from "./CursorBadgeSettings";
 import { CursorCaGate, CursorCaProvider, CursorModelGate, CursorModelProvider } from "./CursorGates";
 import { CursorModelCards, cursorModelGroups, type CursorModelGroup, type CursorModelGrouping } from "./CursorModelCards";
 import { CursorModelEditor, emptyCursorModelDraft, type CursorModelDraft } from "./CursorModelEditor";
@@ -43,6 +44,10 @@ export function CursorSettingsPage() {
   const [groupBaseUrlDraft, setGroupBaseUrlDraft] = useState("");
   const [groupApiKeyDraft, setGroupApiKeyDraft] = useState("");
   const [groupSettingsBusy, setGroupSettingsBusy] = useState(false);
+  const [badgeSettings, setBadgeSettings] = useState<ModelBadgeSettings | null>(null);
+  const [badgeDraft, setBadgeDraft] = useState<ModelBadgeSettings>(DEFAULT_MODEL_BADGE_SETTINGS);
+  const [badgeOpen, setBadgeOpen] = useState(false);
+  const [badgeBusy, setBadgeBusy] = useState(false);
   const activeModelTests = useRef(new Map<string, { testId: string; controller: AbortController; cancelling: boolean }>());
   const caReady = cursorHarness?.ca === "ready";
   const cursorTakenOver = cursorHarness?.settings_applied ?? false;
@@ -54,18 +59,16 @@ export function CursorSettingsPage() {
   ];
   const providerGroups = cursorModelGroups(models, "provider");
   const typeGroups = cursorModelGroups(models, "type");
-  const canGroupByProvider = providerGroups.length > 1;
-  const canGroupByType = typeGroups.length > 1;
-
-  useEffect(() => {
-    if ((grouping === "provider" && !canGroupByProvider) || (grouping === "type" && !canGroupByType)) {
-      setGrouping("flat");
-    }
-  }, [canGroupByProvider, canGroupByType, grouping]);
 
   useEffect(() => {
     if (caCommand) void api.copyCursorText(caCommand);
   }, [caCommand]);
+
+  useEffect(() => {
+    void api.modelBadgeSettings()
+      .then((settings) => setBadgeSettings(settings))
+      .catch(() => setBadgeSettings(DEFAULT_MODEL_BADGE_SETTINGS));
+  }, []);
 
   const initializeCa = async () => {
     const status = await appStore.initializeCursorCa();
@@ -253,6 +256,23 @@ export function CursorSettingsPage() {
       setGroupSettingsBusy(false);
     }
   };
+  const openBadgeSettings = () => {
+    setBadgeDraft(badgeSettings ?? DEFAULT_MODEL_BADGE_SETTINGS);
+    setBadgeOpen(true);
+  };
+  const saveBadgeSettings = async () => {
+    setBadgeBusy(true);
+    try {
+      const saved = await api.setModelBadgeSettings(badgeDraft);
+      setBadgeSettings(saved);
+      setBadgeDraft(saved);
+      setBadgeOpen(false);
+    } catch (cause) {
+      message(errorText(cause));
+    } finally {
+      setBadgeBusy(false);
+    }
+  };
   const reorderModels = useCallback(async (modelHashes: string[]) => {
     if (!await appStore.reorderCursorModels(modelHashes)) {
       message(appStore.getSnapshot().error || t("排序失败"));
@@ -318,8 +338,9 @@ export function CursorSettingsPage() {
         </TooltipTrigger>
         {testTargets.length > 0 && <div className={styles.groupActions} role="group" aria-label={t("操作")}>
           <button type="button" aria-pressed={grouping === "flat"} onClick={() => setGrouping("flat")}>{t("默认平铺")}</button>
-          {canGroupByProvider && <button type="button" aria-pressed={grouping === "provider"} onClick={() => setGrouping("provider")}>{t("按供应商")}</button>}
-          {canGroupByType && <button type="button" aria-pressed={grouping === "type"} onClick={() => setGrouping("type")}>{t("按类型")}</button>}
+          <button type="button" aria-pressed={grouping === "provider"} onClick={() => setGrouping("provider")}>{t("按供应商")}</button>
+          <button type="button" aria-pressed={grouping === "type"} onClick={() => setGrouping("type")}>{t("按类型")}</button>
+          <button type="button" disabled={cursorBusy} onClick={openBadgeSettings}>{t("显示设置")}</button>
           <button type="button" disabled={cursorBusy || (!batchTesting && testingModelHashes.size > 0)} onClick={() => void (batchTesting ? cancelAllModelTests() : testAllModels())}>{batchTesting ? t("取消全部测试") : t("一键测试")}</button>
         </div>}
       </div>
@@ -347,6 +368,9 @@ export function CursorSettingsPage() {
     <ConfirmDialog open={caCommand !== null} title={t("安装本地 CA")} cancelLabel={t("关闭")} confirmLabel={t("打开终端")} onCancel={() => setCaCommand(null)} onConfirm={openCaTerminal}>
       <div className={styles.editor}><strong>{t("需要授权安装证书")}</strong><span>{t("安装命令已自动复制。点击“打开终端”，将命令粘贴到终端中执行，并按提示输入密码。")}</span><pre className={styles.command}>{caCommand}</pre></div>
     </ConfirmDialog>
+    <Modal open={badgeOpen} title={t("模型显示设置")} busy={badgeBusy} onClose={() => setBadgeOpen(false)} onSubmit={() => void saveBadgeSettings()} submitLabel={t("保存")}>
+      <CursorBadgeSettings settings={badgeDraft} sample={models[0] ?? null} onChange={setBadgeDraft} />
+    </Modal>
     <Modal open={settingsGroup !== null} title={t("分组设置")} busy={groupSettingsBusy || cursorBusy} onClose={() => setSettingsGroup(null)} onSubmit={() => void saveGroupSettings()} submitLabel={t("保存")}>
       {settingsGroup && <div className={styles.editor}>
         <FormField label={t("分组名称")} hint={t("应用于该分组下的全部模型，并作为 Cursor 模型选择器中的徽章标签；清空则恢复显示服务器域名。")}>

@@ -160,18 +160,18 @@ pub fn decode(request: &ai::BidiAppendRequest) -> Result<DecodedAppend> {
         .map(|id| id.request_id.as_str())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| Error::Protocol("BidiAppend request_id is required".into()))?;
-    if !request.data_binary.is_empty() {
-        return Err(Error::Protocol(
-            "BidiAppend data_binary is not part of the captured protocol".into(),
-        ));
-    }
-    if request.data.is_empty() {
+    // Cursor sends the AgentClientMessage as `data_binary`; older captures only
+    // carry the hex `data` form. Prefer the binary field when both are present.
+    let payload = if !request.data_binary.is_empty() {
+        request.data_binary.clone()
+    } else if !request.data.is_empty() {
+        hex::decode(&request.data)
+            .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?
+    } else {
         return Err(Error::Protocol(
             "BidiAppend contains no AgentClientMessage".into(),
         ));
-    }
-    let payload = hex::decode(&request.data)
-        .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?;
+    };
     Ok(DecodedAppend {
         request_id: request_id.into(),
         seqno: request.append_seqno,
@@ -208,4 +208,93 @@ pub async fn append(
         })
         .await?;
     Ok(ai::BidiAppendResponse {})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_request_message(model: &str) -> agent::AgentClientMessage {
+        agent::AgentClientMessage {
+            message: Some(agent::agent_client_message::Message::RunRequest(
+                agent::AgentRunRequest {
+                    requested_model: Some(agent::RequestedModel {
+                        model_id: model.into(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )),
+        }
+    }
+
+    fn request_id() -> ai::BidiRequestId {
+        ai::BidiRequestId {
+            request_id: "req-1".into(),
+        }
+    }
+
+    #[test]
+    fn bidi_append_accepts_a_binary_encoded_agent_message() {
+        let message = run_request_message("local-model-hash");
+        let request = ai::BidiAppendRequest {
+            data: String::new(),
+            request_id: Some(request_id()),
+            append_seqno: 1,
+            data_binary: message.encode_to_vec(),
+        };
+
+        let decoded = decode(&request).expect("binary payload is part of the wire protocol");
+        assert_eq!(decoded.request_id, "req-1");
+        assert_eq!(decoded.seqno, 1);
+        assert_eq!(decoded.model_id(), Some("local-model-hash"));
+    }
+
+    #[test]
+    fn bidi_append_still_accepts_the_hex_encoded_form() {
+        let message = run_request_message("local-model-hash");
+        let request = ai::BidiAppendRequest {
+            data: hex::encode(message.encode_to_vec()),
+            request_id: Some(request_id()),
+            append_seqno: 2,
+            data_binary: Vec::new(),
+        };
+
+        let decoded = decode(&request).expect("hex payload stays supported");
+        assert_eq!(decoded.seqno, 2);
+        assert_eq!(decoded.model_id(), Some("local-model-hash"));
+    }
+
+    #[test]
+    fn bidi_append_prefers_the_binary_payload_when_both_are_present() {
+        let binary = run_request_message("binary-model");
+        let hex = run_request_message("hex-model");
+        let request = ai::BidiAppendRequest {
+            data: hex::encode(hex.encode_to_vec()),
+            request_id: Some(request_id()),
+            append_seqno: 3,
+            data_binary: binary.encode_to_vec(),
+        };
+
+        let decoded = decode(&request).expect("both encodings present");
+        assert_eq!(decoded.model_id(), Some("binary-model"));
+    }
+
+    #[test]
+    fn bidi_append_rejects_a_payload_that_carries_neither_encoding() {
+        let request = ai::BidiAppendRequest {
+            data: String::new(),
+            request_id: Some(request_id()),
+            append_seqno: 4,
+            data_binary: Vec::new(),
+        };
+
+        let error = decode(&request)
+            .err()
+            .expect("an empty append is not a message");
+        assert_eq!(
+            error.to_string(),
+            "protocol error: BidiAppend contains no AgentClientMessage"
+        );
+    }
 }

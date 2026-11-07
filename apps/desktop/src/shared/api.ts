@@ -188,6 +188,13 @@ export interface TokenPricingSettings {
   cache_write_per_million: number;
 }
 
+/** Cursor's `ModelPickerBadge.Variant` has no hex field, so these five are the whole palette. */
+export type ModelBadgeColor = "accent" | "neutral" | "success" | "warn" | "danger";
+
+export interface ModelBadgeSettings {
+  color: ModelBadgeColor;
+}
+
 export type PluginRuntimeState = "uninitialized" | "initializing" | "ready" | "failed" | "unsupported";
 export type PluginRuntimePhase = "checking" | "downloading" | "verifying" | "installing" | "validating";
 
@@ -568,4 +575,6 @@ export const api = {
   setCommitSettings: (settings: CommitSettings) => request<CommitSettingsView>("/settings/commit", { method: "PUT", body: JSON.stringify(settings) }),
   pricingSettings: () => request<TokenPricingSettings>("/settings/pricing"),
   setPricingSettings: (settings: TokenPricingSettings) => request<TokenPricingSettings>("/settings/pricing", { method: "PUT", body: JSON.stringify(settings) }),
+  modelBadgeSettings: () => request<ModelBadgeSettings>("/settings/model-badges"),
+  setModelBadgeSettings: (settings: ModelBadgeSettings) => request<ModelBadgeSettings>("/settings/model-badges", { method: "PUT", body: JSON.stringify(settings) }),
 };

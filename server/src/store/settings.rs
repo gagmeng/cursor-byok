@@ -13,6 +13,7 @@ const COMMIT_SETTINGS_KEY: &str = "commit_settings";
 const CURSOR_TAKEOVER_ENABLED_KEY: &str = "cursor_takeover_enabled";
 const PRICING_SETTINGS_KEY: &str = "token_pricing";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
+const MODEL_BADGES_SETTINGS_KEY: &str = "model_badges";
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -99,6 +100,40 @@ impl Default for DesktopSettings {
 
 fn default_true() -> bool {
     true
+}
+
+/// The five colours Cursor's `ModelPickerBadge.Variant` accepts. The protocol
+/// has no hex field, so this list is the whole palette.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelBadgeColor {
+    #[default]
+    Accent,
+    Neutral,
+    Success,
+    Warn,
+    Danger,
+}
+
+/// The provider badge shown on the right of every BYOK model row. Its label is
+/// always the group name (falling back to the API host); only the colour is
+/// configurable.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct ModelBadgeSettings {
+    #[serde(default = "default_badge_color")]
+    pub color: ModelBadgeColor,
+}
+
+impl Default for ModelBadgeSettings {
+    fn default() -> Self {
+        Self {
+            color: default_badge_color(),
+        }
+    }
+}
+
+fn default_badge_color() -> ModelBadgeColor {
+    ModelBadgeColor::Neutral
 }
 
 impl TabSettings {
@@ -477,6 +512,33 @@ impl Store {
         Ok(settings)
     }
 
+    pub async fn model_badge_settings(&self) -> Result<ModelBadgeSettings> {
+        let value = sqlx::query_scalar::<_, String>(
+            "SELECT value_json FROM service_settings WHERE setting_key = ?",
+        )
+        .bind(MODEL_BADGES_SETTINGS_KEY)
+        .fetch_optional(&self.pool)
+        .await?;
+        value
+            .map(|value| serde_json::from_str(&value).map_err(Into::into))
+            .unwrap_or_else(|| Ok(ModelBadgeSettings::default()))
+    }
+
+    pub async fn set_model_badge_settings(
+        &self,
+        settings: ModelBadgeSettings,
+    ) -> Result<ModelBadgeSettings> {
+        let value_json = serde_json::to_string(&settings)?;
+        let _write = self.writes.lock().await;
+        sqlx::query("INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms")
+            .bind(MODEL_BADGES_SETTINGS_KEY)
+            .bind(value_json)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        Ok(settings)
+    }
+
     pub async fn pricing_settings(&self) -> Result<TokenPricingSettings> {
         let value = sqlx::query_scalar::<_, String>(
             "SELECT value_json FROM service_settings WHERE setting_key = ?",
@@ -510,9 +572,10 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::{
-        read_proxy_settings, CommitPromptLocale, CommitSettings, ExternalApiSettings, ProxyMode,
-        ProxySettingsInput, ProxySettingsSecret, Store, TokenPricingSettings,
-        DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN, PROXY_SETTINGS_KEY,
+        now_ms, read_proxy_settings, CommitPromptLocale, CommitSettings, ExternalApiSettings,
+        ModelBadgeColor, ModelBadgeSettings, ProxyMode, ProxySettingsInput, ProxySettingsSecret,
+        Store, TokenPricingSettings, DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN,
+        MODEL_BADGES_SETTINGS_KEY, PROXY_SETTINGS_KEY,
     };
 
     /// The `outbound_proxy` row exactly as builds before the `system` -> `default`
@@ -646,6 +709,58 @@ mod tests {
         assert_eq!(saved, custom);
 
         assert_eq!(store.pricing_settings().await.unwrap(), custom);
+    }
+
+    #[tokio::test]
+    async fn model_badge_settings_persist_and_read_back() {
+        let directory = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", directory.path().join("test.db").display());
+        let store = Store::connect(&url).await.unwrap();
+
+        assert_eq!(
+            store.model_badge_settings().await.unwrap(),
+            ModelBadgeSettings::default()
+        );
+
+        let custom = ModelBadgeSettings {
+            color: ModelBadgeColor::Warn,
+        };
+        assert_eq!(
+            store.set_model_badge_settings(custom).await.unwrap(),
+            custom
+        );
+        assert_eq!(
+            Store::connect(&url)
+                .await
+                .unwrap()
+                .model_badge_settings()
+                .await
+                .unwrap(),
+            custom
+        );
+    }
+
+    #[tokio::test]
+    async fn model_badge_settings_from_an_older_row_keep_the_default_color() {
+        let directory = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", directory.path().join("test.db").display());
+        let store = Store::connect(&url).await.unwrap();
+        let _write = store.writes.lock().await;
+        sqlx::query(
+            "INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?)",
+        )
+        .bind(MODEL_BADGES_SETTINGS_KEY)
+        // A row written when both slots were configurable: it must not turn the
+        // settings page unreadable, so unknown fields are ignored.
+        .bind(r#"{"first":{"source":"note","color":"accent"},"second":{"source":"group_name","color":"success"}}"#)
+        .bind(now_ms())
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        drop(_write);
+
+        let settings = store.model_badge_settings().await.unwrap();
+        assert_eq!(settings.color, ModelBadgeSettings::default().color);
     }
 
     #[tokio::test]

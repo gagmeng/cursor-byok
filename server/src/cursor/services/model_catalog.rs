@@ -6,12 +6,14 @@ use axum::{
 };
 use bytes::{BufMut, BytesMut};
 use prost::Message;
+use url::Url;
 
 use crate::{
     api::cursor::proxy::{self, CursorProxy},
     cursor::{protocol::proto::agent::v1 as agent, transport::TransportRegistry},
     model::{format_token_count, parse_token_count, ModelConfig},
     plugin::PluginModelDescriptor,
+    store::{ModelBadgeColor, ModelBadgeSettings},
     Error, Result,
 };
 
@@ -261,8 +263,16 @@ pub async fn available_models(
         plugin_model_count = plugin_models.len(),
         "appending BYOK models to Cursor AvailableModels"
     );
-    let mut available_models = models.iter().map(available_model).collect::<Vec<_>>();
-    available_models.extend(plugin_models.iter().map(available_plugin_model));
+    let badges = registry.store().model_badge_settings().await?;
+    let mut available_models = models
+        .iter()
+        .map(|model| available_model(model, &badges))
+        .collect::<Vec<_>>();
+    available_models.extend(
+        plugin_models
+            .iter()
+            .map(|model| available_plugin_model(model, &badges)),
+    );
     let local = AvailableModelsAddition {
         model_names: models
             .iter()
@@ -450,7 +460,7 @@ fn unary_payload(body: &Bytes) -> Result<(bool, &[u8])> {
     Ok((true, &body[5..]))
 }
 
-fn available_model(model: &ModelConfig) -> AvailableModel {
+fn available_model(model: &ModelConfig, badges: &ModelBadgeSettings) -> AvailableModel {
     let contexts = context_options(model.context_window_tokens);
     let tooltip = model_tooltip(model);
     let variants = model_variants(
@@ -464,6 +474,7 @@ fn available_model(model: &ModelConfig) -> AvailableModel {
         .iter()
         .filter_map(|variant| variant.legacy_slug.clone())
         .collect();
+    let api_host = api_host(&model.base_url);
     AvailableModel {
         name: model.model_hash.clone(),
         default_on: true,
@@ -491,12 +502,50 @@ fn available_model(model: &ModelConfig) -> AvailableModel {
             id: 6,
             display_name: "Cursor".into(),
         }),
-        model_picker_badges: vec![ModelPickerBadge {
-            label: model.tooltip_data.clone(),
-            variant: 1,
-            dismiss_on_selection: false,
-        }],
+        model_picker_badges: provider_badges(
+            model.group_name.as_deref(),
+            api_host.as_deref(),
+            badges,
+        ),
     }
+}
+
+/// One badge on the right of the picker row, carrying the provider label. A
+/// group name is the configured intent; the host keeps the badge present for
+/// models that were never placed in a group.
+fn provider_badges(
+    group_name: Option<&str>,
+    api_host: Option<&str>,
+    settings: &ModelBadgeSettings,
+) -> Vec<ModelPickerBadge> {
+    let Some(label) = group_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .or(api_host)
+    else {
+        return Vec::new();
+    };
+    vec![ModelPickerBadge {
+        label: label.to_owned(),
+        variant: badge_variant(settings.color),
+        dismiss_on_selection: false,
+    }]
+}
+
+fn badge_variant(color: ModelBadgeColor) -> i32 {
+    match color {
+        ModelBadgeColor::Accent => 1,
+        ModelBadgeColor::Neutral => 2,
+        ModelBadgeColor::Success => 3,
+        ModelBadgeColor::Warn => 4,
+        ModelBadgeColor::Danger => 5,
+    }
+}
+
+fn api_host(base_url: &str) -> Option<String> {
+    Url::parse(base_url.trim())
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
 }
 
 fn model_parameters(
@@ -678,7 +727,10 @@ fn model_tooltip(model: &ModelConfig) -> TooltipData {
     }
 }
 
-fn available_plugin_model(model: &PluginModelDescriptor) -> AvailableModel {
+fn available_plugin_model(
+    model: &PluginModelDescriptor,
+    badges: &ModelBadgeSettings,
+) -> AvailableModel {
     let tooltip = TooltipData {
         markdown_content: model.description.clone(),
     };
@@ -716,11 +768,9 @@ fn available_plugin_model(model: &PluginModelDescriptor) -> AvailableModel {
             id: 6,
             display_name: model.provider_type.clone(),
         }),
-        model_picker_badges: vec![ModelPickerBadge {
-            label: model.plugin_name.clone(),
-            variant: 1,
-            dismiss_on_selection: false,
-        }],
+        // Plugin descriptors carry no endpoint, so the plugin name is the only
+        // provider label they have.
+        model_picker_badges: provider_badges(Some(&model.plugin_name), None, badges),
     }
 }
 
@@ -758,7 +808,10 @@ fn usable_model(model: &ModelConfig) -> agent::ModelDetails {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ModelType, OPENAI_CHAT_ENDPOINT};
+    use crate::{
+        model::{ModelType, OPENAI_CHAT_ENDPOINT},
+        store::ModelBadgeColor,
+    };
 
     fn model() -> ModelConfig {
         ModelConfig {
@@ -790,22 +843,118 @@ mod tests {
         }
     }
 
+    fn plugin_model() -> PluginModelDescriptor {
+        PluginModelDescriptor {
+            id: "plugin:test/provider/plugin-model".into(),
+            plugin_id: "test".into(),
+            plugin_name: "plugin-name".into(),
+            provider_id: "provider".into(),
+            model_id: "plugin-model".into(),
+            display_name: "Plugin Model".into(),
+            description: Some("Plugin description".into()),
+            icon: String::new(),
+            provider_type: "plugin".into(),
+            max_output_tokens: None,
+            images: true,
+            enabled: true,
+        }
+    }
+
     #[test]
-    fn cursor_model_badge_displays_the_configured_note_instead_of_the_api_host_or_group() {
+    fn cursor_model_badge_shows_the_configured_group_name() {
         let mut configured = model();
         configured.tooltip_data = "自用模型".into();
         configured.group_name = Some("provider group".into());
-        let published = available_model(&configured);
+        let published = available_model(&configured, &ModelBadgeSettings::default());
         assert_eq!(published.model_picker_badges.len(), 1);
-        assert_eq!(published.model_picker_badges[0].label, "自用模型");
+        assert_eq!(published.model_picker_badges[0].label, "provider group");
+        assert_eq!(published.model_picker_badges[0].variant, 2);
         assert_eq!(
             published.tooltip_data.unwrap().markdown_content.as_deref(),
             Some("自用模型")
         );
+    }
+
+    #[test]
+    fn cursor_model_badge_falls_back_to_the_api_host_when_no_group_name_is_set() {
+        let mut configured = model();
         configured.group_name = None;
+        configured.base_url = "https://provider.example/v1/chat/completions".into();
+        let published = available_model(&configured, &ModelBadgeSettings::default());
+        assert_eq!(published.model_picker_badges.len(), 1);
+        assert_eq!(published.model_picker_badges[0].label, "provider.example");
+    }
+
+    #[test]
+    fn cursor_model_badge_is_omitted_when_neither_a_group_nor_a_host_exists() {
+        let mut configured = model();
+        configured.group_name = None;
+        configured.base_url = String::new();
+        let published = available_model(&configured, &ModelBadgeSettings::default());
+        assert!(published.model_picker_badges.is_empty());
+    }
+
+    #[test]
+    fn cursor_model_badge_ignores_a_blank_group_name() {
+        let mut configured = model();
+        configured.group_name = Some("   ".into());
+        configured.base_url = "https://provider.example/v1/chat/completions".into();
+        let published = available_model(&configured, &ModelBadgeSettings::default());
+        assert_eq!(published.model_picker_badges[0].label, "provider.example");
+    }
+
+    #[test]
+    fn the_badge_uses_the_configured_color() {
+        for (color, variant) in [
+            (ModelBadgeColor::Accent, 1),
+            (ModelBadgeColor::Neutral, 2),
+            (ModelBadgeColor::Success, 3),
+            (ModelBadgeColor::Warn, 4),
+            (ModelBadgeColor::Danger, 5),
+        ] {
+            let mut configured = model();
+            configured.group_name = Some("provider group".into());
+            let published = available_model(&configured, &ModelBadgeSettings { color });
+            assert_eq!(published.model_picker_badges[0].variant, variant);
+        }
+    }
+
+    #[test]
+    fn the_default_badge_color_is_neutral() {
+        let mut configured = model();
+        configured.group_name = Some("provider group".into());
+        let published = available_model(&configured, &ModelBadgeSettings::default());
+        assert_eq!(published.model_picker_badges[0].variant, 2);
+    }
+
+    #[test]
+    fn the_model_name_is_always_shown() {
+        let published = available_model(&model(), &ModelBadgeSettings::default());
         assert_eq!(
-            available_model(&configured).model_picker_badges[0].label,
-            "自用模型"
+            published.client_display_name.as_deref(),
+            Some("Local Model")
+        );
+        assert_eq!(
+            published.inputbox_short_model_name.as_deref(),
+            Some("Local Model")
+        );
+    }
+
+    #[test]
+    fn plugin_models_get_the_same_single_provider_badge() {
+        let settings = ModelBadgeSettings {
+            color: ModelBadgeColor::Success,
+        };
+        let published = available_plugin_model(&plugin_model(), &settings);
+        let badges = published
+            .model_picker_badges
+            .iter()
+            .map(|badge| (badge.label.as_str(), badge.variant))
+            .collect::<Vec<_>>();
+        assert_eq!(badges, [("plugin-name", 3)]);
+        assert_eq!(
+            published.client_display_name.as_deref(),
+            Some("Plugin Model")
         );
     }
 

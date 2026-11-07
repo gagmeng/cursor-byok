@@ -4,6 +4,7 @@ import type {
   ExternalApiSettings,
   LlmCall,
   Model,
+  ModelBadgeSettings,
   Overview,
   OverviewTokenUsageBucket,
   ProxySettings,
@@ -96,6 +97,7 @@ let proxySettings: ProxySettings = {
   has_password: false,
 };
 let tabSettings: TabSettings = { mode: "public", address: "" };
+let modelBadgeSettings: ModelBadgeSettings = { color: "neutral" };
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
 
 export function installDemoApi() {
@@ -173,6 +175,11 @@ export function installDemoApi() {
     }
     if (path === "/settings/desktop" && method === "GET") return json({ silent_start: false, show_dock_icon: true });
     if (path === "/settings/desktop") return json(body);
+    if (path === "/settings/model-badges" && method === "GET") return json(modelBadgeSettings);
+    if (path === "/settings/model-badges") {
+      modelBadgeSettings = body as ModelBadgeSettings;
+      return json(modelBadgeSettings);
+    }
     if (path === "/desktop/open-external-url") {
       const target = (body as { url?: string } | null)?.url;
       if (target) {

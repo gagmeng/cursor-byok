@@ -1,0 +1,97 @@
+@use "../../styles/typography" as type;
+
+.body {
+  display: grid;
+  gap: 14px;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 12px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 5px;
+}
+
+.previewLabel {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+.previewBadges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.previewEmpty {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+.previewName {
+  color: var(--vscode-foreground);
+  font-size: type.$font-size-xs;
+  white-space: nowrap;
+}
+
+.badge {
+  padding: 2px 8px;
+  color: var(--badge-color);
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-size: type.$font-size-2xs;
+  line-height: 1.4;
+  white-space: nowrap;
+  // Cursor upper-cases every badge label; the preview must match what the
+  // picker will actually show, not the configured source text.
+  text-transform: uppercase;
+}
+
+.colors {
+  display: flex;
+  gap: 6px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 5px;
+  cursor: pointer;
+
+  &:hover { border-color: var(--vscode-focusBorder); }
+  &[aria-checked="true"] { box-shadow: 0 0 0 2px var(--vscode-focusBorder); }
+}
+
+// The five Cursor badge variants. Colours live in one place so the swatch, the
+// preview, and any future surface cannot drift apart; they are hardcoded rather
+// than themed because Cursor renders the same five regardless of our theme.
+.badge[data-color="accent"],
+.swatch[data-color="accent"] { --badge-color: #49b0ff; }
+
+.badge[data-color="neutral"],
+.swatch[data-color="neutral"] { --badge-color: var(--vscode-descriptionForeground); }
+
+.badge[data-color="success"],
+.swatch[data-color="success"] { --badge-color: #00a558; }
+
+.badge[data-color="warn"],
+.swatch[data-color="warn"] { --badge-color: #d9a300; }
+
+.badge[data-color="danger"],
+.swatch[data-color="danger"] { --badge-color: #f53b3a; }
+
+.swatch { background: var(--badge-color); }
+
+.hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+  line-height: 1.5;
+}

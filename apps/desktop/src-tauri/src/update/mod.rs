@@ -24,7 +24,7 @@ mod replacement;
 
 #[cfg(target_os = "windows")]
 const PORTABLE_UPDATE_ENDPOINT: &str =
-    "https://github.com/zkldwxz/cursor-byok/releases/latest/download/portable-latest.json";
+    "https://github.com/gagmeng/cursor-byok/releases/latest/download/portable-latest.json";
 #[cfg(any(target_os = "windows", test))]
 const WINDOWS_PAYLOAD_NAME: &str = "cursor-byok-desktop.exe";
 
@@ -270,6 +270,41 @@ mod tests {
     fn extracts_the_single_expected_windows_executable() {
         let bytes = update_zip(WINDOWS_PAYLOAD_NAME, b"MZpayload");
         assert_eq!(extract_windows_payload(&bytes).unwrap(), b"MZpayload");
+    }
+
+    /// Both update channels must resolve to the releases of the repository this
+    /// fork is published from. The Tauri endpoint lives in `tauri.conf.json` and
+    /// is read by the plugin before any Rust code runs, so it cannot share a
+    /// constant with the portable endpoint; asserting them together is what keeps
+    /// the two files from drifting apart.
+    #[test]
+    fn update_manifests_are_served_from_this_projects_releases() {
+        const THIS_PROJECT_RELEASES: &str =
+            "https://github.com/gagmeng/cursor-byok/releases/latest/download/";
+
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let endpoints: Vec<&str> = config["plugins"]["updater"]["endpoints"]
+            .as_array()
+            .expect("updater endpoints array")
+            .iter()
+            .map(|endpoint| endpoint.as_str().expect("endpoint is a string"))
+            .collect();
+
+        assert_eq!(
+            endpoints,
+            [format!("{THIS_PROJECT_RELEASES}latest.json").as_str()],
+            "the Tauri updater must read latest.json from this project's releases"
+        );
+
+        // The portable endpoint exists only on Windows; on other targets the
+        // constant is compiled out and CI runs this test without it.
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            PORTABLE_UPDATE_ENDPOINT,
+            format!("{THIS_PROJECT_RELEASES}portable-latest.json"),
+            "the Windows portable updater must read portable-latest.json from this project's releases"
+        );
     }
 
     #[test]

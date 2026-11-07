@@ -23,8 +23,9 @@ use crate::{
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     provider::{is_valid_response_event, ModelEvent, Provider},
     store::{
-        CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings, ProxySettings,
-        ProxySettingsInput, StatisticsStorage, Store, TabSettings, TokenPricingSettings,
+        CommitSettings, DesktopSettings, ExternalApiSettings, ModelBadgeSettings, PortSettings,
+        ProxySettings, ProxySettingsInput, StatisticsStorage, Store, TabSettings,
+        TokenPricingSettings,
     },
     Error, Result,
 };
@@ -793,6 +794,17 @@ impl ControlService {
 
     pub async fn set_commit_settings(&self, settings: CommitSettings) -> Result<CommitSettings> {
         self.store.set_commit_settings(settings).await
+    }
+
+    pub async fn model_badge_settings(&self) -> Result<ModelBadgeSettings> {
+        self.store.model_badge_settings().await
+    }
+
+    pub async fn set_model_badge_settings(
+        &self,
+        settings: ModelBadgeSettings,
+    ) -> Result<ModelBadgeSettings> {
+        self.store.set_model_badge_settings(settings).await
     }
 
     pub async fn pricing_settings(&self) -> Result<TokenPricingSettings> {
