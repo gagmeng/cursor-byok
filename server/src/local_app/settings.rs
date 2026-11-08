@@ -63,6 +63,11 @@ fn write(settings: &BTreeMap<String, Value>) -> Result<()> {
 
 pub fn write_proxy_settings(proxy_url: &str) -> Result<()> {
     let mut settings = read()?;
+    apply_proxy_settings(&mut settings, proxy_url);
+    write(&settings)
+}
+
+fn apply_proxy_settings(settings: &mut BTreeMap<String, Value>, proxy_url: &str) {
     settings.remove(NO_PROXY_KEY);
     settings.insert(KEYS[0].into(), Value::String(proxy_url.into()));
     settings.insert(KEYS[1].into(), Value::String(proxy_url.into()));
@@ -72,31 +77,35 @@ pub fn write_proxy_settings(proxy_url: &str) -> Result<()> {
     // Remote-SSH AgentService must dial through the local Cursor client so the
     // local BYOK proxy and model catalog are visible on the remote window.
     settings.insert(KEYS[5].into(), Value::String(REMOTE_INFERENCE_ROUTE.into()));
-    write(&settings)
 }
 
 pub fn clear_proxy_settings() -> Result<()> {
     let mut settings = read()?;
-    let before = settings.len();
-    for key in KEYS {
-        settings.remove(key);
-    }
-    if settings.len() != before {
+    if remove_proxy_settings(&mut settings) {
         write(&settings)?;
     }
     Ok(())
 }
 
+fn remove_proxy_settings(settings: &mut BTreeMap<String, Value>) -> bool {
+    let before = settings.len();
+    for key in KEYS {
+        settings.remove(key);
+    }
+    settings.len() != before
+}
+
 pub fn settings_match(proxy_url: &str) -> Result<bool> {
-    let settings = read()?;
-    Ok(
-        settings.get(KEYS[0]) == Some(&Value::String(proxy_url.into()))
-            && settings.get(KEYS[1]) == Some(&Value::String(proxy_url.into()))
-            && settings.get(KEYS[2]) == Some(&Value::String("on".into()))
-            && settings.get(KEYS[3]) == Some(&Value::Bool(true))
-            && settings.get(KEYS[4]) == Some(&Value::Bool(true))
-            && settings.get(KEYS[5]) == Some(&Value::String(REMOTE_INFERENCE_ROUTE.into())),
-    )
+    Ok(proxy_settings_match(&read()?, proxy_url))
+}
+
+fn proxy_settings_match(settings: &BTreeMap<String, Value>, proxy_url: &str) -> bool {
+    settings.get(KEYS[0]) == Some(&Value::String(proxy_url.into()))
+        && settings.get(KEYS[1]) == Some(&Value::String(proxy_url.into()))
+        && settings.get(KEYS[2]) == Some(&Value::String("on".into()))
+        && settings.get(KEYS[3]) == Some(&Value::Bool(true))
+        && settings.get(KEYS[4]) == Some(&Value::Bool(true))
+        && settings.get(KEYS[5]) == Some(&Value::String(REMOTE_INFERENCE_ROUTE.into()))
 }
 
 pub fn clear_stale_managed_settings() -> Result<()> {
@@ -115,4 +124,60 @@ pub fn clear_stale_managed_settings() -> Result<()> {
         clear_proxy_settings()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn applying_and_removing_proxy_preserves_unrelated_settings() {
+        let mut settings = BTreeMap::from([
+            ("editor.fontSize".into(), json!(14)),
+            ("remote.SSH.configFile".into(), json!("/custom/ssh/config")),
+            ("[rust]".into(), json!({"editor.formatOnSave": true})),
+        ]);
+        apply_proxy_settings(&mut settings, "http://127.0.0.1:43123");
+        assert!(proxy_settings_match(&settings, "http://127.0.0.1:43123"));
+        assert_eq!(settings["editor.fontSize"], json!(14));
+        assert_eq!(settings["[rust]"], json!({"editor.formatOnSave": true}));
+        assert!(remove_proxy_settings(&mut settings));
+        assert!(!remove_proxy_settings(&mut settings));
+        assert!(!settings.contains_key(KEYS[0]));
+        assert_eq!(settings["editor.fontSize"], json!(14));
+    }
+
+    #[test]
+    fn local_status_requires_every_proxy_setting_and_current_port() {
+        let mut settings = BTreeMap::new();
+        apply_proxy_settings(&mut settings, "http://127.0.0.1:43123");
+        for key in KEYS {
+            let mut incomplete = settings.clone();
+            incomplete.remove(key);
+            assert!(!proxy_settings_match(&incomplete, "http://127.0.0.1:43123"));
+        }
+        assert!(!proxy_settings_match(&settings, "http://127.0.0.1:43124"));
+        apply_proxy_settings(&mut settings, "http://127.0.0.1:43124");
+        assert!(proxy_settings_match(&settings, "http://127.0.0.1:43124"));
+    }
+
+    #[test]
+    fn jsonc_settings_keep_nested_values_when_proxy_is_reapplied() {
+        let mut settings: BTreeMap<String, Value> = json5::from_str(
+            r#"{
+                // An existing Cursor user file, including a trailing comma.
+                "http.noProxy": ["example.com"],
+                "[rust]": {"editor.formatOnSave": true},
+            }"#,
+        )
+        .unwrap();
+        apply_proxy_settings(&mut settings, "http://127.0.0.1:43123");
+        let once = settings.clone();
+        apply_proxy_settings(&mut settings, "http://127.0.0.1:43123");
+        assert_eq!(settings, once);
+        assert!(!settings.contains_key(NO_PROXY_KEY));
+        assert_eq!(settings["[rust]"], json!({"editor.formatOnSave": true}));
+        assert_eq!(settings[KEYS[5]], json!(REMOTE_INFERENCE_ROUTE));
+    }
 }

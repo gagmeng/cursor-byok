@@ -36,6 +36,13 @@ pub(crate) enum ExecStage {
     DynamicMcp(pb::McpToolDefinition),
     EditRead,
     EditWrite(EditWrite),
+    /// Absolute-path Semble indexing: dump the Cursor host tree through Shell, then search.
+    SembleSnapshot(SembleSnapshot),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SembleSnapshot {
+    pub remote_root: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -116,6 +123,7 @@ impl ExecContext {
 
 pub(crate) struct PendingInteraction {
     pub call: ToolCall,
+    pub conversation_id: String,
     pub started_at_ms: u64,
 }
 
@@ -175,6 +183,21 @@ impl CursorToolRuntime {
         .await
     }
 
+    pub(crate) async fn reserve_semble_snapshot(
+        &self,
+        call: &ToolCall,
+        context: &ExecContext,
+        remote_root: String,
+    ) -> Result<u32> {
+        self.reserve_exec_stage(
+            call,
+            context,
+            ExecStage::SembleSnapshot(SembleSnapshot { remote_root }),
+            None,
+        )
+        .await
+    }
+
     async fn reserve_exec_stage(
         &self,
         call: &ToolCall,
@@ -197,12 +220,13 @@ impl CursorToolRuntime {
         Ok(id)
     }
 
-    pub async fn reserve_interaction(&self, call: &ToolCall) -> Result<u32> {
+    pub async fn reserve_interaction(&self, call: &ToolCall, context: &ExecContext) -> Result<u32> {
         let id = self.next_id()?;
         self.interactions.lock().await.insert(
             id,
             PendingInteraction {
                 call: call.clone(),
+                conversation_id: context.conversation_id.clone(),
                 started_at_ms: now_ms(),
             },
         );
@@ -215,6 +239,14 @@ impl CursorToolRuntime {
             .await
             .get(&id)
             .map(|entry| entry.call.clone())
+    }
+
+    pub(crate) async fn exec_stage_is_semble_snapshot(&self, id: u32) -> bool {
+        self.execs
+            .lock()
+            .await
+            .get(&id)
+            .is_some_and(|entry| matches!(entry.stage, ExecStage::SembleSnapshot(_)))
     }
 
     pub async fn append_stdout(&self, id: u32, data: &str) -> bool {
@@ -340,10 +372,10 @@ impl CursorToolRuntime {
             let mut abort_ids = Vec::new();
             let mut interrupted_ids = Vec::new();
             entries.retain(|id, entry| {
-                interrupted_ids.push(*id);
                 let keep_running = entry.call.name.eq_ignore_ascii_case("Task");
                 if !keep_running {
                     abort_ids.push(*id);
+                    interrupted_ids.push(*id);
                 }
                 keep_running
             });
@@ -394,4 +426,61 @@ pub(crate) fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+#[cfg(test)]
+mod interrupt_tests {
+    use super::*;
+
+    fn tool_call(call_id: &str, name: &str) -> ToolCall {
+        ToolCall {
+            index: 0,
+            call_id: call_id.into(),
+            model_call_id: "model-call".into(),
+            name: name.into(),
+            arguments_text: "{}".into(),
+            arguments: serde_json::json!({}),
+            argument_error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_message_interrupt_does_not_mute_the_tasks_it_keeps_running() {
+        let runtime = CursorToolRuntime::default();
+        let context = ExecContext::default();
+        let task = runtime
+            .reserve_exec(&tool_call("call-task", "Task"), &context)
+            .await
+            .unwrap();
+        let shell = runtime
+            .reserve_exec(&tool_call("call-shell", "Shell"), &context)
+            .await
+            .unwrap();
+
+        assert_eq!(runtime.interrupt_for_message().await, vec![shell]);
+
+        // The Task was deliberately left running, so its events must still land.
+        assert!(!runtime.is_interrupted(task).await);
+        assert!(runtime.append_stdout(task, "still running").await);
+        assert!(runtime.is_interrupted(shell).await);
+    }
+
+    #[tokio::test]
+    async fn a_message_interrupt_still_mutes_and_aborts_everything_else() {
+        let runtime = CursorToolRuntime::default();
+        let context = ExecContext::default();
+        let read = runtime
+            .reserve_exec(&tool_call("call-read", "Read"), &context)
+            .await
+            .unwrap();
+        let interaction = runtime
+            .reserve_interaction(&tool_call("call-ask", "AskQuestion"), &context)
+            .await
+            .unwrap();
+
+        assert_eq!(runtime.interrupt_for_message().await, vec![read]);
+
+        assert!(runtime.is_interrupted(read).await);
+        assert!(runtime.is_interrupted(interaction).await);
+    }
 }

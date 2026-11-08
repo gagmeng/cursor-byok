@@ -451,6 +451,7 @@ fn invocation(review: &AutoReviewContext, content: String) -> ModelInvocation {
         call_id: call_id.clone(),
         run_id: call_id.clone(),
         conversation_id: call_id,
+        prompt_cache_enabled: true,
         provider_call_index: 0,
         request: ModelRequest {
             prompt: PromptSpec {
@@ -880,7 +881,10 @@ mod tests {
         call.name = "WebFetch".into();
         let context = review_context(false);
         let runtime = CursorToolRuntime::default();
-        let id = runtime.reserve_interaction(&call).await.unwrap();
+        let id = runtime
+            .reserve_interaction(&call, &ExecContext::default())
+            .await
+            .unwrap();
         let message = crate::cursor::tools::codec::tool_query(id, &call).unwrap();
         reviewer.start(
             runtime,

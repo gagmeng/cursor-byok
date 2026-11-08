@@ -84,7 +84,7 @@ pub(super) async fn start(
     }
 
     if is_mcp_auth(call) {
-        return interaction::start(runtime, call).await;
+        return interaction::start(runtime, call, context).await;
     }
 
     if context.task_disabled(call) {
@@ -102,10 +102,12 @@ pub(super) async fn start(
         "write" | "strreplace" | "editnotebook" => edit::start(runtime, call, context).await,
         "webfetch" => interaction::start_reviewed(runtime, call, context, review).await,
         "askquestion" | "websearch" | "switchmode" | "createplan" | "generateimage" => {
-            interaction::start(runtime, call).await
+            interaction::start(runtime, call, context).await
         }
         "todowrite" | "updatecurrentstep" => local::start(call, message_index),
-        "semblesearch" | "semblefindrelated" => search::start(results, call, store.cloned()),
+        "semblesearch" | "semblefindrelated" => {
+            search::start(runtime, results, call, context, store.cloned()).await
+        }
         _ => Ok(unavailable_tool(call)),
     }
 }

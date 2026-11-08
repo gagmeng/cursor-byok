@@ -48,7 +48,8 @@ function chatContent(parts: LlmContentPart[]): JsonValue {
   return parts.map((part): JsonValue =>
     part.type === "text" ? { type: "text", text: part.text } : {
       type: "image_url",
-      image_url: { url: `data:${part.mediaType};base64,${part.dataBase64}` },
+      // detail 是 OpenAI image_url 的必填字段;严格后端(vLLM)缺它会 400。
+      image_url: { url: `data:${part.mediaType};base64,${part.dataBase64}`, detail: "auto" },
     }
   );
 }
