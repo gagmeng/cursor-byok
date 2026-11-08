@@ -161,6 +161,7 @@ impl Store {
         if result.rows_affected() != 1 {
             return Err(Error::RunNotFound(format!("model {current_hash}")));
         }
+        super::model_system_prompts::rekey(&mut transaction, current_hash, &next_hash).await?;
         transaction.commit().await?;
         session.committed();
         Ok(self
@@ -183,6 +184,7 @@ impl Store {
         if result.rows_affected() != 1 {
             return Err(Error::RunNotFound(format!("model {hash}")));
         }
+        super::model_system_prompts::remove(&mut transaction, hash).await?;
         transaction.commit().await?;
         session.committed();
         Ok(())

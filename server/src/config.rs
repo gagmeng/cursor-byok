@@ -14,6 +14,14 @@ const DEFAULT_PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const DEFAULT_PROVIDER_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 pub fn managed_data_dir() -> Result<PathBuf> {
+    // 测试与便携场景可通过环境变量把数据目录整体迁走,避免读写真实用户数据。
+    if let Ok(override_dir) = std::env::var("CURSOR_BYOK_DATA_DIR") {
+        if !override_dir.trim().is_empty() {
+            let data_dir = PathBuf::from(override_dir);
+            fs::create_dir_all(&data_dir)?;
+            return Ok(data_dir);
+        }
+    }
     let home_dir = dirs::home_dir()
         .ok_or_else(|| Error::Config("cannot resolve user home directory".into()))?;
     let data_dir = home_dir.join(DATA_DIR_NAME);

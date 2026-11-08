@@ -1,3 +1,4 @@
+//! 管理桌面应用的原生窗口与运行生命周期。
 use std::{
     process::{Command, ExitCode},
     sync::{
@@ -49,9 +50,8 @@ fn open_terminal_with_command(command: String) -> tauri::Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(["/C", "start", "cmd", "/K", &command])
-            .spawn()?;
+        use std::os::windows::process::CommandExt;
+        Command::new("cmd").args(["/K"]).raw_arg(&command).spawn()?;
         Ok(())
     }
     #[cfg(target_os = "linux")]
@@ -125,7 +125,7 @@ fn create_main_window(
         .expect("local frontend URL");
     let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(url))
         .title("Cursor BYOK")
-        .inner_size(820.0, 558.0)
+        .inner_size(864.0, 558.0)
         .min_inner_size(820.0, 558.0)
         .center()
         .background_color(Color(20, 20, 20, 255))

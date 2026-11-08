@@ -220,11 +220,57 @@ const ZCODE_AUTH: &[(&str, &str)] = &[
     ),
 ];
 
+const OPENCODE_AUTH: &[(&str, &str)] = &[
+    (
+        "plugin.json",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/opencode-auth/plugin.json"
+        )),
+    ),
+    (
+        "main.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/opencode-auth/main.ts"
+        )),
+    ),
+    (
+        "identity.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/opencode-auth/identity.ts"
+        )),
+    ),
+    (
+        "provider.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/opencode-auth/provider.ts"
+        )),
+    ),
+    (
+        "models.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/opencode-auth/models.ts"
+        )),
+    ),
+    (
+        "assets/opencode.svg",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/opencode-auth/assets/opencode.svg"
+        )),
+    ),
+];
+
 const PLUGINS: &[(&str, &[(&str, &str)])] = &[
     ("codex-auth", CODEX_AUTH),
     ("grok-auth", GROK_AUTH),
     ("antigravity-auth", ANTIGRAVITY_AUTH),
     ("zcode-auth", ZCODE_AUTH),
+    ("opencode-auth", OPENCODE_AUTH),
 ];
 
 /// 把内置插件预装到 installed 目录。manifest 的 version 是缓存键:
@@ -328,6 +374,12 @@ mod tests {
         assert!(root
             .path()
             .join("antigravity-auth/assets/antigravity.svg")
+            .is_file());
+        // 新插件也必须被完整预装,否则模型同步永远为 0。
+        assert!(root.path().join("opencode-auth/plugin.json").is_file());
+        assert!(root
+            .path()
+            .join("opencode-auth/assets/opencode.svg")
             .is_file());
 
         // 版本一致:本地改动与额外文件保持原样,不发生任何写盘。

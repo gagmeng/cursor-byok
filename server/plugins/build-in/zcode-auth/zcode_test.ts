@@ -39,7 +39,7 @@ function credential(): ZCodeCredential {
 
 function request(): LlmRequest {
   return {
-    instructions: "You are a coding assistant.",
+    instructions: "You are a coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀",
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     tools: [{
       name: "read_file",
@@ -252,6 +252,9 @@ Deno.test("provider injects identity headers and coding-plan body fields", async
   assertEquals(capturedInit?.headers?.["X-ZCode-Agent"], "glm");
   const body = JSON.parse(capturedInit?.body ?? "{}");
   assertEquals(body.model, "glm-5.3");
+  assertEquals(body.messages[0], {
+    role: "system", content: "You are a coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀",
+  });
   assertEquals(body.max_tokens, 8192);
   assert(body.max_completion_tokens === undefined);
   assert(body.stream_options === undefined);

@@ -17,8 +17,8 @@ use crate::{
     model::{
         ContentPart, CursorRunTraceArtifact, CursorRunTraceSummary, LlmCallRequest,
         LlmCallResponseChunk, LlmCallSummary, ModelConfig, ModelConfigInput, ModelInvocation,
-        ModelRequest, ModelSpec, ModelType, Overview, ProjectedContent, ProjectedMessage,
-        PromptSpec, ProviderType, Role,
+        ModelRequest, ModelSpec, ModelSystemPromptSettings, ModelType, Overview, ProjectedContent,
+        ProjectedMessage, PromptSpec, ProviderType, Role,
     },
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     provider::{is_valid_response_event, ModelEvent, Provider},
@@ -168,6 +168,32 @@ impl ControlService {
         &self.cursor_harness
     }
 
+    pub async fn model_system_prompt(&self, model_id: &str) -> Result<ModelSystemPromptSettings> {
+        self.check_system_prompt_model(model_id).await?;
+        self.store.model_system_prompt(model_id).await
+    }
+
+    pub async fn set_model_system_prompt(
+        &self,
+        model_id: &str,
+        settings: &ModelSystemPromptSettings,
+    ) -> Result<ModelSystemPromptSettings> {
+        settings.validate()?;
+        self.check_system_prompt_model(model_id).await?;
+        self.store.set_model_system_prompt(model_id, settings).await
+    }
+
+    async fn check_system_prompt_model(&self, model_id: &str) -> Result<()> {
+        if model_id.starts_with(crate::plugin::ADAPTER_ID_PREFIX) {
+            self.plugins.model_descriptor(model_id).await?;
+        } else if self.store.model(model_id).await?.is_none() {
+            return Err(Error::Config(format!(
+                "system prompt model does not exist: {model_id}"
+            )));
+        }
+        Ok(())
+    }
+
     pub async fn plugins(&self) -> Vec<PluginDescriptor> {
         self.plugins.plugins().await
     }
@@ -240,6 +266,7 @@ impl ControlService {
             exported_at_ms: chrono::Utc::now().timestamp_millis(),
             models,
             plugin_resources,
+            model_system_prompts: self.store.model_system_prompts().await?,
         })
     }
 
@@ -257,12 +284,13 @@ impl ControlService {
                 file.format
             )));
         }
-        if file.version > VERSION {
+        if file.version != VERSION {
             return Err(Error::Config(format!(
-                "migration file version {} is newer than this app supports ({VERSION})",
+                "migration file version must be {VERSION}: {}",
                 file.version
             )));
         }
+        crate::model::ModelSystemPromptConfig::validate_all(&file.model_system_prompts)?;
         let models_total = file.models.len();
         let models_added = self.store.create_models_if_missing(&file.models).await?;
         let mut resources_added = 0;
@@ -291,6 +319,17 @@ impl ControlService {
                 Err(error) => warnings.push(format!("{}: {error}", group.plugin_id)),
             }
         }
+        let mut prompts = Vec::new();
+        for prompt in file.model_system_prompts {
+            match self.check_system_prompt_model(&prompt.model_id).await {
+                Ok(()) => prompts.push(prompt),
+                Err(error) => warnings.push(format!(
+                    "system prompt {} was not imported: {error}",
+                    prompt.model_id
+                )),
+            }
+        }
+        self.store.set_model_system_prompts(&prompts).await?;
         Ok(MigrationResult {
             models_added,
             models_total,

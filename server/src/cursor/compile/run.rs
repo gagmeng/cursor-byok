@@ -11,7 +11,10 @@ use crate::{
         protocol::proto::agent::v1 as pb,
         services::blob_sync::BlobSynchronizer,
         services::context_sync::RequestContextSynchronizer,
-        tools::runtime::{ExecContext, SubagentModel},
+        tools::{
+            auto_review::{AutoReviewContext, AutoReviewStates},
+            runtime::{ExecContext, SubagentModel},
+        },
     },
     model::{
         CanonicalMessage, ContentPart, ConversationId, MessageContent, Origin, PreparedRun,
@@ -52,6 +55,7 @@ pub(crate) struct PrepareDependencies<'a> {
     pub blob_sync: &'a BlobSynchronizer,
     pub context_sync: &'a RequestContextSynchronizer,
     pub local_rules_dir: Option<&'a std::path::Path>,
+    pub auto_review_states: &'a AutoReviewStates,
 }
 
 pub(crate) async fn prepare(
@@ -66,6 +70,7 @@ pub(crate) async fn prepare(
         blob_sync,
         context_sync,
         local_rules_dir,
+        auto_review_states,
     } = dependencies;
     checkpoint
         .import_prefetched(&request.pre_fetched_blobs)
@@ -162,14 +167,14 @@ pub(crate) async fn prepare(
     if subagents_disabled {
         checkpoint_prompt.tools.retain(|tool| tool.name != "Task");
     }
-    let prompt = if compacting {
-        compiler.prompt_spec(Mode::Compaction, &model, &[], false)?
-    } else {
-        checkpoint_prompt.clone()
-    };
+    let recovered_instructions = base_messages
+        .as_deref()
+        .filter(|messages| !messages.is_empty())
+        .map(validate_prompt_root)
+        .transpose()?
+        .map(str::to_owned);
     let proposed_base_checkpoint_id = match base_messages.as_mut() {
         Some(messages) if !messages.is_empty() => {
-            validate_prompt_root(messages)?;
             messages.retain(|message| {
                 !(message.role == Role::System && message.origin == Origin::Prompt)
             });
@@ -184,6 +189,21 @@ pub(crate) async fn prepare(
                 .await?
         }
         None => proposed_base_checkpoint_id,
+    };
+    checkpoint_prompt.instructions = store
+        .conversation_system_prompt(
+            &conversation_id,
+            &model.model_id,
+            checkpoint_mode.name(),
+            &checkpoint_prompt.instructions,
+            recovered_instructions.as_deref(),
+            &compiler.default_system_prompts(&model),
+        )
+        .await?;
+    let prompt = if compacting {
+        compiler.prompt_spec(Mode::Compaction, &model, &[], false)?
+    } else {
+        checkpoint_prompt.clone()
     };
     let mut projected_user_context = if input_id.is_some() && !compacting && !background_completion
     {
@@ -320,6 +340,8 @@ pub(crate) async fn prepare(
         };
         RunAction::Resume { pending_tool_round }
     };
+    let auto_review =
+        auto_review_states.resolve(conversation_id.as_str(), &request_context, &model.model_id);
     let exec = exec_context(
         request,
         &request_context,
@@ -327,6 +349,7 @@ pub(crate) async fn prepare(
         &model.model_id,
         subagents_disabled,
         &subagent_model_overrides,
+        auto_review,
     );
     Ok((
         PreparedRun {
@@ -370,7 +393,7 @@ fn runtime_message_text(message: &CanonicalMessage) -> Result<String> {
     Ok(text.clone())
 }
 
-fn validate_prompt_root(messages: &[CanonicalMessage]) -> Result<()> {
+fn validate_prompt_root(messages: &[CanonicalMessage]) -> Result<&str> {
     let prompts = messages
         .iter()
         .filter(|message| message.role == Role::System && message.origin == Origin::Prompt)
@@ -386,12 +409,12 @@ fn validate_prompt_root(messages: &[CanonicalMessage]) -> Result<()> {
             "Cursor system prompt root is not textual content".into(),
         ));
     };
-    let [ContentPart::Text { .. }] = parts.as_slice() else {
+    let [ContentPart::Text { text }] = parts.as_slice() else {
         return Err(Error::Protocol(
             "Cursor system prompt root is not one text part".into(),
         ));
     };
-    Ok(())
+    Ok(text)
 }
 
 fn execution_run_id(request_id: &str) -> RunId {
@@ -575,6 +598,7 @@ pub(super) fn mode_from_proto(mode: i32) -> Result<Mode> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn exec_context(
     request: &pb::AgentRunRequest,
     request_context: &pb::RequestContext,
@@ -585,6 +609,7 @@ fn exec_context(
         crate::model::SubagentKind,
         crate::model::SubagentModelOverride,
     )],
+    auto_review: Option<AutoReviewContext>,
 ) -> ExecContext {
     let subagent_model = overrides.first().map(|(_, value)| match value {
         crate::model::SubagentModelOverride::Explicit(model) => {
@@ -610,5 +635,6 @@ fn exec_context(
             .unwrap_or_default(),
         admin_command_denylist: request_context.admin_command_denylist.clone(),
         mcp_routes: context::meta_mcp_routes(request_context),
+        auto_review,
     }
 }

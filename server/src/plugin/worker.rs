@@ -50,6 +50,8 @@ struct PluginWorkerInner {
     entry: PathBuf,
     loader: PluginDefinitionLoader,
     host: HostContext,
+    /// manifest 声明的可读环境变量名;spawn 时转成 --allow-env 名单。
+    env_vars: Vec<String>,
     process: Mutex<Option<WorkerProcess>>,
     pending: Pending,
 }
@@ -115,6 +117,7 @@ impl PluginWorker {
                 directory: plugin.directory.clone(),
                 entry: plugin.entry.clone(),
                 loader,
+                env_vars: plugin.manifest.permissions.env.clone(),
                 process: Mutex::new(None),
                 pending: Arc::new(Mutex::new(HashMap::new())),
             }),
@@ -271,6 +274,12 @@ impl PluginWorker {
             // 插件用 Deno.osRelease() 还原客户端运行时的系统版本指纹;
             // 只放开这一个 sys 能力,不暴露主机名等其它机器信息。
             .arg("--allow-sys=osRelease")
+            // manifest 声明 env 名单才放行;未声明的插件没有任何环境变量读取能力。
+            .args(if self.inner.env_vars.is_empty() {
+                Vec::new()
+            } else {
+                vec![format!("--allow-env={}", self.inner.env_vars.join(","))]
+            })
             .arg(format!(
                 "--import-map={}",
                 self.inner.loader.import_map().display()

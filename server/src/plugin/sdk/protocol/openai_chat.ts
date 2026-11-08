@@ -100,7 +100,12 @@ export function buildChatBody(call: OpenAiChatCall): Record<string, JsonValue> {
   if (call.request.tools.length > 0) {
     body.tools = call.request.tools.map((tool) => ({
       type: "function",
-      function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        ...(tool.strict !== undefined ? { strict: tool.strict } : {}),
+      },
     }));
   }
   if (call.request.maxOutputTokens !== null) {

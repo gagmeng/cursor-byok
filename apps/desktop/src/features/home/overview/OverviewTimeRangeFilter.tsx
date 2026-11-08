@@ -6,7 +6,7 @@ import controls from "../../../shared/ui/Controls.module.scss";
 import { Icon } from "../../../shared/ui/Icon";
 import { ModelSelect, type ModelSelectOption } from "../../../shared/ui/ModelSelect";
 import { TooltipTrigger } from "../../../shared/ui/TooltipTrigger";
-import { refreshIcon } from "../../../shared/ui/icons";
+import { reloadIcon } from "../../../shared/ui/icons";
 import styles from "./OverviewTimeRangeFilter.module.scss";
 
 export type OverviewRangePreset = "ten-minutes" | "hour" | "today" | "week" | "month" | "custom";
@@ -92,7 +92,7 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
       >{t("自定义")}</button>
     </div>
     <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={onRefresh}>
-      <Icon className={busy ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
+      <Icon className={busy ? controls.spin : ""} icon={reloadIcon} size="1.1em" />
     </button></TooltipTrigger>
     {customOpen && createPortal(<div
       id={popoverId}

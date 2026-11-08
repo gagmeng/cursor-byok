@@ -32,6 +32,9 @@ pub struct PluginManifest {
 pub struct PluginPermissions {
     #[serde(default)]
     pub network: Vec<String>,
+    /// 允许插件读取的环境变量名;worker 以 --allow-env 名单放行,未列名的读取被拒绝。
+    #[serde(default)]
+    pub env: Vec<String>,
 }
 
 impl PluginManifest {
@@ -58,6 +61,16 @@ impl PluginManifest {
             if !hosts.insert(host.to_ascii_lowercase()) {
                 return Err(Error::Config(format!(
                     "plugin '{}' contains duplicate network host '{host}'",
+                    self.id
+                )));
+            }
+        }
+        let mut env_names = HashSet::new();
+        for name in &self.permissions.env {
+            validate_env_name(name)?;
+            if !env_names.insert(name.as_str()) {
+                return Err(Error::Config(format!(
+                    "plugin '{}' contains duplicate env name '{name}'",
                     self.id
                 )));
             }
@@ -90,6 +103,16 @@ pub(super) fn validate_id(value: &str, label: &str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::Config(format!("invalid {label}: {value}")))
+    }
+}
+
+fn validate_env_name(value: &str) -> Result<()> {
+    static NAME: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let expression = NAME.get_or_init(|| Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").unwrap());
+    if expression.is_match(value) {
+        Ok(())
+    } else {
+        Err(Error::Config(format!("invalid plugin env name: {value}")))
     }
 }
 

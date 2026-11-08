@@ -660,6 +660,344 @@ async fn assistant_terminated_history_is_sent_with_a_user_tail() {
     );
 }
 
+#[tokio::test]
+async fn custom_prompt_survives_compaction_and_restart_without_rereading_settings() {
+    use cursor_server::model::{ModelSystemPromptSettings, SystemPromptPosition};
+
+    let (directory, store) = fixtures::temp_store().await;
+    let model = store
+        .create_model(&windowed_model("snapshot-model", None))
+        .await
+        .unwrap();
+    store
+        .set_model_system_prompt(
+            &model.model_hash,
+            &ModelSystemPromptSettings {
+                enabled: true,
+                content: "SYSTEM_PROMPT_VERSION_ONE".into(),
+                position: SystemPromptPosition::After,
+            },
+        )
+        .await
+        .unwrap();
+    let provider = fake_provider::FakeProvider::default();
+    provider.push(text_response("first answer", 100, 10));
+    provider.push(text_response("durable summary", 100, 10));
+    provider.push(text_response("resumed answer", 100, 10));
+    provider.push(text_response("new conversation answer", 100, 10));
+    let assets = PromptAssets::embedded().unwrap();
+    let registry = TransportRegistry::new(
+        store.clone(),
+        Arc::new(provider.clone()),
+        PromptCompiler::new(assets.clone()),
+    );
+    let first = run(
+        &registry,
+        "prompt-first",
+        user_request(
+            "prompt-conversation",
+            "p1",
+            "remember this",
+            &model.model_hash,
+            None,
+        ),
+    )
+    .await;
+    let first_state = first.checkpoints.last().unwrap().clone();
+    let instructions = provider.requests()[0].prompt.instructions.clone();
+    assert!(
+        instructions.ends_with("SYSTEM_PROMPT_VERSION_ONE"),
+        "custom instructions must reach the model as part of the system prompt"
+    );
+    assert_eq!(instructions.matches("SYSTEM_PROMPT_VERSION_ONE").count(), 1);
+
+    store
+        .set_model_system_prompt(
+            &model.model_hash,
+            &ModelSystemPromptSettings {
+                enabled: true,
+                content: "SYSTEM_PROMPT_VERSION_TWO".into(),
+                position: SystemPromptPosition::Before,
+            },
+        )
+        .await
+        .unwrap();
+    let compacted = run(
+        &registry,
+        "prompt-compact",
+        summary_request(
+            "prompt-conversation",
+            &model.model_hash,
+            first_state.clone(),
+        ),
+    )
+    .await;
+    let compacted_state = compacted.checkpoints.last().unwrap().clone();
+    assert_eq!(
+        compacted_state.root_prompt_messages_json[0], first_state.root_prompt_messages_json[0],
+        "compaction must keep the adopted system root"
+    );
+    let summary_prompt = &provider.requests()[1].prompt.instructions;
+    assert!(
+        !summary_prompt.contains("SYSTEM_PROMPT_VERSION_"),
+        "the summarizer must never receive the custom system prompt"
+    );
+
+    let reopened = cursor_server::store::Store::connect(&format!(
+        "sqlite://{}",
+        directory.path().join("test.db").display()
+    ))
+    .await
+    .unwrap();
+    let restarted = TransportRegistry::new(
+        reopened,
+        Arc::new(provider.clone()),
+        PromptCompiler::new(assets),
+    );
+    let resumed = run(
+        &restarted,
+        "prompt-resumed",
+        user_request(
+            "prompt-conversation",
+            "p2",
+            "continue",
+            &model.model_hash,
+            Some(compacted_state.clone()),
+        ),
+    )
+    .await;
+    assert_eq!(
+        provider.requests()[2].prompt.instructions,
+        instructions,
+        "restart must restore the adopted prompt, not the newly edited settings"
+    );
+    assert_eq!(
+        resumed
+            .checkpoints
+            .last()
+            .unwrap()
+            .root_prompt_messages_json[0],
+        compacted_state.root_prompt_messages_json[0]
+    );
+
+    run(
+        &restarted,
+        "prompt-new",
+        user_request(
+            "new-prompt-conversation",
+            "p3",
+            "new conversation",
+            &model.model_hash,
+            None,
+        ),
+    )
+    .await;
+    assert!(
+        provider.requests()[3]
+            .prompt
+            .instructions
+            .starts_with("SYSTEM_PROMPT_VERSION_TWO"),
+        "a new conversation must use the newly saved settings"
+    );
+}
+
+#[tokio::test]
+async fn plugin_models_receive_their_own_saved_system_prompt() {
+    use cursor_server::model::{ModelSystemPromptSettings, SystemPromptPosition};
+
+    let (_directory, store) = fixtures::temp_store().await;
+    let model_id = "plugin:test/provider/model";
+    store
+        .set_model_system_prompt(
+            model_id,
+            &ModelSystemPromptSettings {
+                enabled: true,
+                content: "PLUGIN_SYSTEM_INSTRUCTION".into(),
+                position: SystemPromptPosition::Before,
+            },
+        )
+        .await
+        .unwrap();
+    let provider = fake_provider::FakeProvider::default();
+    provider.push(text_response("plugin answer", 100, 10));
+    let registry = TransportRegistry::new(
+        store,
+        Arc::new(provider.clone()),
+        PromptCompiler::new(PromptAssets::embedded().unwrap()),
+    );
+    run(
+        &registry,
+        "plugin-prompt",
+        user_request(
+            "plugin-prompt-conversation",
+            "plugin-user",
+            "hello",
+            model_id,
+            None,
+        ),
+    )
+    .await;
+    assert!(
+        provider.requests()[0]
+            .prompt
+            .instructions
+            .starts_with("PLUGIN_SYSTEM_INSTRUCTION"),
+        "plugin prompts must not depend on a model_configs row"
+    );
+}
+
+#[tokio::test]
+async fn custom_prompts_reach_the_actual_system_field_of_all_three_http_protocols() {
+    use axum::{
+        body::{to_bytes, Body},
+        http::Request as HttpRequest,
+        middleware::{self, Next},
+    };
+    use cursor_server::{
+        api::byok,
+        model::{ModelSystemPromptSettings, SystemPromptPosition, OPENAI_RESPONSES_ENDPOINT},
+        network::NetworkClients,
+        plugin::{PluginRegistry, PluginRuntime},
+        provider::ProviderRouter,
+        store::ExternalApiSettings,
+    };
+    use serde_json::{json, Value};
+
+    let (_upstream_directory, upstream_store) = fixtures::temp_store().await;
+    let mut upstream_model = windowed_model("upstream-wire", None);
+    upstream_model.group_name = Some("wire".into());
+    upstream_store.create_model(&upstream_model).await.unwrap();
+    upstream_store
+        .set_external_api_settings(ExternalApiSettings {
+            enabled: true,
+            api_key: "local-upstream-key".into(),
+        })
+        .await
+        .unwrap();
+    let upstream_provider = fake_provider::FakeProvider::default();
+    for _ in 0..3 {
+        upstream_provider.push(text_response("ok", 100, 10));
+    }
+    let runtime = PluginRuntime::managed().unwrap();
+    let plugins = PluginRegistry::managed(upstream_store.clone(), runtime, "1.0.7".into()).unwrap();
+    let (capture, mut received) = tokio::sync::mpsc::unbounded_channel::<(String, Value)>();
+    let upstream = byok::router(
+        upstream_store,
+        plugins,
+        Arc::new(upstream_provider.clone()),
+        None,
+    )
+    .layer(middleware::from_fn(
+        move |request: HttpRequest<Body>, next: Next| {
+            let capture = capture.clone();
+            async move {
+                let (parts, body) = request.into_parts();
+                let bytes = to_bytes(body, 128 * 1024).await.unwrap();
+                capture
+                    .send((
+                        parts.uri.path().into(),
+                        serde_json::from_slice(&bytes).unwrap(),
+                    ))
+                    .unwrap();
+                next.run(HttpRequest::from_parts(parts, Body::from(bytes)))
+                    .await
+            }
+        },
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let (_directory, store) = fixtures::temp_store().await;
+    let runtime = PluginRuntime::managed().unwrap();
+    let plugins = PluginRegistry::managed(store.clone(), runtime, "1.0.7".into()).unwrap();
+    let provider = Arc::new(ProviderRouter::new(
+        store.clone(),
+        plugins,
+        NetworkClients::new(store.clone()),
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+    ));
+    let registry = TransportRegistry::new(
+        store.clone(),
+        provider,
+        PromptCompiler::new(PromptAssets::embedded().unwrap()),
+    );
+    let content = "SYSTEM_WIRE_MARKER\n中文😀 {{FAKE_MODEL_NAME}}";
+    for (name, kind, endpoint, path) in [
+        (
+            "chat",
+            ModelType::OpenAi,
+            OPENAI_CHAT_ENDPOINT,
+            "/byok/v1/chat/completions",
+        ),
+        (
+            "responses",
+            ModelType::OpenAi,
+            OPENAI_RESPONSES_ENDPOINT,
+            "/byok/v1/responses",
+        ),
+        ("messages", ModelType::Anthropic, "", "/byok/v1/messages"),
+    ] {
+        let mut input = windowed_model(name, None);
+        input.model_type = kind;
+        input.use_full_url = false;
+        input.base_url = format!("http://{address}/byok/v1");
+        input.api_key = "local-upstream-key".into();
+        input.model_id = "wire/upstream-wire".into();
+        input.openai_endpoint = endpoint.into();
+        let model = store.create_model(&input).await.unwrap();
+        store
+            .set_model_system_prompt(
+                &model.model_hash,
+                &ModelSystemPromptSettings {
+                    enabled: true,
+                    content: content.into(),
+                    position: SystemPromptPosition::After,
+                },
+            )
+            .await
+            .unwrap();
+        let output = run(
+            &registry,
+            &format!("wire-{name}"),
+            user_request(
+                &format!("wire-conversation-{name}"),
+                "wire-user",
+                "reply ok",
+                &model.model_hash,
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(
+            output.turn_ended, 1,
+            "{name} must finish through its real HTTP provider"
+        );
+        let (actual_path, body) = received.recv().await.unwrap();
+        assert_eq!(actual_path, path);
+        let system = match name {
+            "chat" => {
+                assert_eq!(body["messages"][0]["role"], "system");
+                body["messages"][0]["content"].as_str().unwrap()
+            }
+            "responses" => body["instructions"].as_str().unwrap(),
+            _ => body["system"][0]["text"].as_str().unwrap(),
+        };
+        assert!(
+            system.ends_with(content),
+            "{name}: custom text must be in the actual outbound system field, not a user message"
+        );
+        assert_eq!(system.matches("SYSTEM_WIRE_MARKER").count(), 1);
+        assert_eq!(body["model"], json!("wire/upstream-wire"));
+    }
+    assert_eq!(upstream_provider.requests().len(), 3);
+    assert!(upstream_provider
+        .requests()
+        .iter()
+        .all(|request| request.prompt.instructions.ends_with(content)));
+    server.abort();
+}
+
 #[derive(Default)]
 struct Output {
     checkpoints: Vec<pb::ConversationStateStructure>,

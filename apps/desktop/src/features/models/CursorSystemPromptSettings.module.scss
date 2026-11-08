@@ -1,0 +1,74 @@
+//! 使用桌面主题样式呈现系统提示词编辑区域。
+@use "../../styles/typography" as type;
+
+.editor {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modelName {
+  overflow-wrap: anywhere;
+  font-size: type.$font-size-base;
+}
+
+.description,
+.hint,
+.byteCount {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+  line-height: 1.6;
+}
+
+.description,
+.error {
+  margin: 0;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  > button { flex: 0 0 auto; }
+}
+
+.switchDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: type.$font-size-base;
+}
+
+.promptEditor {
+  width: 100%;
+  min-height: 320px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-sideBar-border));
+  border-radius: 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: type.$font-size-base;
+  line-height: 1.6;
+  resize: vertical;
+
+  &:focus { outline: 1px solid var(--vscode-focusBorder); }
+  &:disabled { opacity: 0.6; }
+  &[aria-invalid="true"] { border-color: var(--vscode-errorForeground); }
+}
+
+.byteCount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.error,
+.byteCount[data-invalid] {
+  color: var(--vscode-errorForeground);
+}
+
+.error { font-size: type.$font-size-xs; }

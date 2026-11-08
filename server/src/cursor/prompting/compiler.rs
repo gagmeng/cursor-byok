@@ -36,18 +36,35 @@ impl PromptCompiler {
         if !model.supports_image_generation {
             tools.retain(|tool| tool.name != "GenerateImage");
         }
-        let fake_model_name = model
+        Ok(PromptSpec {
+            instructions: self.instructions(mode, model),
+            tools,
+        })
+    }
+
+    pub(crate) fn default_system_prompts(&self, model: &ModelSpec) -> BTreeMap<String, String> {
+        [
+            Mode::Agent,
+            Mode::Ask,
+            Mode::Plan,
+            Mode::Debug,
+            Mode::Multitask,
+            Mode::Subagent,
+        ]
+        .into_iter()
+        .map(|mode| (mode.name().into(), self.instructions(mode, model)))
+        .collect()
+    }
+
+    fn instructions(&self, mode: Mode, model: &ModelSpec) -> String {
+        let name = model
             .display_name
             .as_deref()
             .unwrap_or(model.model_id.as_str());
-        Ok(PromptSpec {
-            instructions: self
-                .assets
-                .mode(mode)
-                .prompt
-                .replace("{{FAKE_MODEL_NAME}}", fake_model_name),
-            tools,
-        })
+        self.assets
+            .mode(mode)
+            .prompt
+            .replace("{{FAKE_MODEL_NAME}}", name)
     }
 
     fn tools(&self, mode: Mode, suppress_subagent_progress: bool) -> Vec<ToolDefinition> {

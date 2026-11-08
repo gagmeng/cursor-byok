@@ -1,5 +1,6 @@
+//! 展示内置和插件 Cursor 模型及各模型的操作入口。
 import type { IconifyIcon } from "@iconify/react/offline";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import Sortable from "sortablejs";
 import type { Model, PluginModelDescriptor } from "../../shared/api";
 import { Card } from "../../shared/ui/Card";
@@ -9,19 +10,15 @@ import { TruncatedButton } from "../../shared/ui/TruncatedButton";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
 import styles from "./CursorSettings.module.scss";
 
-export type CursorModelGrouping = "flat" | "provider" | "type";
-
-export type CursorModelGroup = {
-  key: string;
-  label: string;
-  icon: IconifyIcon;
-  models: Model[];
-};
+import type { CursorModelGroup, CursorModelGrouping, CursorPluginGroup } from "./cursorModelGrouping";
 
 type CursorModelCardsProps = {
   models: Model[];
-  pluginModels: PluginModelDescriptor[];
+  groups: CursorModelGroup[];
+  pluginGroups: CursorPluginGroup[];
   grouping: CursorModelGrouping;
+  openGroupIds: ReadonlySet<string>;
+  onToggleGroup: (id: string) => void;
   disabled: boolean;
   testingModelHashes: Set<string>;
   testResults: Map<string, CursorModelTestState>;
@@ -31,37 +28,25 @@ type CursorModelCardsProps = {
   onDelete: (model: Model) => void;
   onTestPluginModel: (model: PluginModelDescriptor) => void;
   onPluginSettings: (model: PluginModelDescriptor) => void;
+  onSystemPrompt: (modelId: string, displayName: string) => void;
   onReorder: (modelHashes: string[]) => void;
   onGroupSettings: (group: CursorModelGroup) => void;
 };
 
-type ModelGridProps = Omit<CursorModelCardsProps, "grouping" | "pluginModels" | "onTestPluginModel" | "onPluginSettings"> & {
+type ModelGridProps = Omit<CursorModelCardsProps, "grouping" | "groups" | "pluginGroups" | "openGroupIds" | "onToggleGroup" | "onTestPluginModel" | "onPluginSettings"> & {
   sortable: boolean;
 };
-
-export function cursorModelGroups(models: Model[], grouping: Exclude<CursorModelGrouping, "flat">): CursorModelGroup[] {
-  const groups = new Map<string, CursorModelGroup>();
-  for (const model of models) {
-    const descriptor = grouping === "provider" ? providerGroup(model) : typeGroup(model);
-    const group = groups.get(descriptor.key);
-    if (group) {
-      group.models.push(model);
-    } else {
-      groups.set(descriptor.key, { ...descriptor, models: [model] });
-    }
-  }
-  return [...groups.values()];
-}
 
 export function CursorModelCards(props: CursorModelCardsProps) {
   const builtins = props.grouping === "flat"
     ? <div style={{ paddingTop: "10px" }}><ModelGrid {...props} sortable /></div>
     : <div className={styles.modelGroups}>
-      {cursorModelGroups(props.models, props.grouping).map((group) => <CollapsibleGroup
-        key={group.key}
+      {props.groups.map((group) => <CollapsibleGroup
+        key={group.id}
         label={group.label}
-        icon={group.icon}
-        defaultOpen={false}
+        icon={props.grouping === "provider" ? flatColorOrganizationIcon : group.key === "anthropic" ? claudeIcon : openAiIcon}
+        open={props.openGroupIds.has(group.id)}
+        onToggle={() => props.onToggleGroup(group.id)}
         onSettings={props.grouping === "provider" ? () => props.onGroupSettings(group) : undefined}
       >
         {group.models.map((model) => <ModelListRow
@@ -74,16 +59,28 @@ export function CursorModelCards(props: CursorModelCardsProps) {
           onEdit={() => props.onEdit(model)}
           onDuplicate={() => props.onDuplicate(model)}
           onDelete={() => props.onDelete(model)}
+          onSystemPrompt={() => props.onSystemPrompt(model.model_hash, model.display_name)}
         />)}
       </CollapsibleGroup>)}
     </div>;
-  return <div className={styles.modelGroups}>
-    {builtins}
-    {pluginGroups(props.pluginModels).map((group) => <CollapsibleGroup
-      key={`${props.grouping}:${group.pluginId}`}
+  // 平铺视图下插件模型与内置模型同为卡片,归属靠卡片徽章表达;
+  // 分组视图保留插件分组容器。
+  const plugins = props.grouping === "flat"
+    ? <div style={{ paddingTop: "10px" }}><PluginModelGrid
+      models={props.pluginGroups.flatMap((group) => group.models)}
+      disabled={props.disabled}
+      testingModelHashes={props.testingModelHashes}
+      testResults={props.testResults}
+      onTest={props.onTestPluginModel}
+      onSettings={props.onPluginSettings}
+      onSystemPrompt={props.onSystemPrompt}
+    /></div>
+    : props.pluginGroups.map((group) => <CollapsibleGroup
+      key={group.id}
       label={group.pluginName}
       iconSrc={group.icon}
-      defaultOpen={props.grouping === "flat"}
+      open={props.openGroupIds.has(group.id)}
+      onToggle={() => props.onToggleGroup(group.id)}
     >
       {group.models.map((model) => <PluginModelRow
         key={model.id}
@@ -93,40 +90,31 @@ export function CursorModelCards(props: CursorModelCardsProps) {
         result={props.testResults.get(model.id)}
         onTest={() => props.onTestPluginModel(model)}
         onSettings={() => props.onPluginSettings(model)}
+        onSystemPrompt={() => props.onSystemPrompt(model.id, model.displayName)}
       />)}
-    </CollapsibleGroup>)}
+    </CollapsibleGroup>);
+  return <div className={styles.modelGroups}>
+    {builtins}
+    {plugins}
   </div>;
 }
 
-function pluginGroups(models: PluginModelDescriptor[]) {
-  const groups: { pluginId: string; pluginName: string; icon: string; models: PluginModelDescriptor[] }[] = [];
-  for (const model of models) {
-    let group = groups.find((candidate) => candidate.pluginId === model.pluginId);
-    if (!group) {
-      group = { pluginId: model.pluginId, pluginName: model.pluginName, icon: model.icon, models: [] };
-      groups.push(group);
-    }
-    group.models.push(model);
-  }
-  return groups;
-}
-
-function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, onSettings, children }: {
+function CollapsibleGroup({ label, icon, iconSrc, open, onToggle, onSettings, children }: {
   label: string;
   icon?: IconifyIcon;
   iconSrc?: string;
-  defaultOpen?: boolean;
+  open: boolean;
+  onToggle: () => void;
   onSettings?: () => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return <Card className={styles.groupCard}>
     <div className={styles.groupHeader}>
       <button
         type="button"
         className={styles.groupToggle}
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onClick={onToggle}
       >
         {icon && <Icon icon={icon} size="1.1em" />}
         {iconSrc && <Icon src={iconSrc} size="1.1em" />}
@@ -141,7 +129,7 @@ function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, onSettings
         className={styles.groupChevron}
         tabIndex={-1}
         aria-hidden="true"
-        onClick={() => setOpen((current) => !current)}
+        onClick={onToggle}
       >
         <Icon icon={open ? chevronDownIcon : chevronRightIcon} size="1em" />
       </button>
@@ -150,7 +138,7 @@ function CollapsibleGroup({ label, icon, iconSrc, defaultOpen = true, onSettings
   </Card>;
 }
 
-function ModelListRow({ model, disabled, testing, result, onTest, onEdit, onDuplicate, onDelete }: {
+function ModelListRow({ model, disabled, testing, result, onTest, onEdit, onDuplicate, onDelete, onSystemPrompt }: {
   model: Model;
   disabled: boolean;
   testing: boolean;
@@ -159,6 +147,7 @@ function ModelListRow({ model, disabled, testing, result, onTest, onEdit, onDupl
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onSystemPrompt: () => void;
 }) {
   return <div className={styles.modelRow}>
     <div className={styles.modelRowName}>
@@ -169,19 +158,21 @@ function ModelListRow({ model, disabled, testing, result, onTest, onEdit, onDupl
     <div className={styles.modelCardActions}>
       <TruncatedButton size="small" disabled={disabled && !testing} label={testing ? t("取消测试") : t("测试")} onClick={onTest} />
       <TruncatedButton size="small" disabled={disabled} label={t("编辑")} onClick={onEdit} />
+      <TruncatedButton size="small" disabled={disabled} label={t("系统提示词")} onClick={onSystemPrompt} />
       <TruncatedButton size="small" disabled={disabled} label={t("复制")} onClick={onDuplicate} />
       <TruncatedButton size="small" className={styles.deleteButton} disabled={disabled} label={t("删除")} onClick={onDelete} />
     </div>
   </div>;
 }
 
-function PluginModelRow({ model, disabled, testing, result, onTest, onSettings }: {
+function PluginModelRow({ model, disabled, testing, result, onTest, onSettings, onSystemPrompt }: {
   model: PluginModelDescriptor;
   disabled: boolean;
   testing: boolean;
   result: CursorModelTestState | undefined;
   onTest: () => void;
   onSettings: () => void;
+  onSystemPrompt: () => void;
 }) {
   return <div className={styles.modelRow}>
     <div className={styles.modelRowName}>
@@ -192,7 +183,56 @@ function PluginModelRow({ model, disabled, testing, result, onTest, onSettings }
     <div className={styles.modelCardActions}>
       <TruncatedButton size="small" disabled={disabled && !testing} label={testing ? t("取消测试") : t("测试")} onClick={onTest} />
       <TruncatedButton size="small" disabled={disabled} label={t("设置")} onClick={onSettings} />
+      <TruncatedButton size="small" disabled={disabled} label={t("系统提示词")} onClick={onSystemPrompt} />
     </div>
+  </div>;
+}
+
+/** 平铺视图的插件模型卡片:与内置卡片同构,徽章承载插件归属,不可拖拽排序。 */
+function PluginModelGrid({
+  models,
+  disabled,
+  testingModelHashes,
+  testResults,
+  onTest,
+  onSettings,
+  onSystemPrompt,
+}: {
+  models: PluginModelDescriptor[];
+  disabled: boolean;
+  testingModelHashes: Set<string>;
+  testResults: Map<string, CursorModelTestState>;
+  onTest: (model: PluginModelDescriptor) => void;
+  onSettings: (model: PluginModelDescriptor) => void;
+  onSystemPrompt: (modelId: string, displayName: string) => void;
+}) {
+  return <div className={styles.modelGrid}>
+    {models.map((model) => {
+      const result = testResults.get(model.id);
+      const testing = testingModelHashes.has(model.id);
+      return <Card className={styles.modelCard} key={model.id}>
+        <div className={styles.modelCardContent}>
+          <div className={styles.modelCardTop}>
+            <div className={styles.modelCardName}>
+              <span className={styles.modelCardNameText}>{model.displayName}</span>
+              <span className={styles.modelCardModelId}>{model.modelId}</span>
+            </div>
+            <span className={styles.modelTypeBadge}>
+              <Icon src={model.icon} />
+              {model.pluginName}
+            </span>
+          </div>
+          <div className={styles.modelCardTest}>
+            <CursorModelTestResult state={result} testing={testing} />
+          </div>
+          <div className={styles.modelCardActions}>
+            <TruncatedButton size="small" disabled={disabled && !testing} label={testing ? t("取消测试") : t("测试")} onClick={() => onTest(model)} />
+            <TruncatedButton size="small" disabled={disabled} label={t("设置")} onClick={() => onSettings(model)} />
+            <TruncatedButton size="small" disabled={disabled} label={t("系统提示词")} onClick={() => onSystemPrompt(model.id, model.displayName)} />
+          </div>
+        </div>
+      </Card>;
+    })}
   </div>;
 }
 
@@ -206,6 +246,7 @@ function ModelGrid({
   onEdit,
   onDuplicate,
   onDelete,
+  onSystemPrompt,
   onReorder,
 }: ModelGridProps) {
   const grid = useRef<HTMLDivElement>(null);
@@ -283,6 +324,7 @@ function ModelGrid({
           <div className={styles.modelCardActions}>
             <TruncatedButton size="small" disabled={disabled && !testing} label={testing ? t("取消测试") : t("测试")} onClick={() => onTest(model)} />
             <TruncatedButton size="small" disabled={disabled} label={t("编辑")} onClick={() => onEdit(model)} />
+            <TruncatedButton size="small" disabled={disabled} label={t("系统提示词")} onClick={() => onSystemPrompt(model.model_hash, model.display_name)} />
             <TruncatedButton size="small" disabled={disabled} label={t("复制")} onClick={() => onDuplicate(model)} />
             <TruncatedButton size="small" className={styles.deleteButton} disabled={disabled} label={t("删除")} onClick={() => onDelete(model)} />
           </div>
@@ -290,29 +332,4 @@ function ModelGrid({
       </Card>;
     })}
   </div>;
-}
-
-function providerGroup(model: Model) {
-  const key = providerDomain(model.base_url);
-  const label = model.group_name?.trim() || key;
-  return { key, label, icon: flatColorOrganizationIcon };
-}
-
-function providerDomain(baseUrl: string) {
-  const value = baseUrl.trim();
-  try {
-    return new URL(value).hostname.toLowerCase() || value;
-  } catch {
-    try {
-      return new URL(`https://${value}`).hostname.toLowerCase() || value;
-    } catch {
-      return value;
-    }
-  }
-}
-
-function typeGroup(model: Model) {
-  if (model.type === "anthropic") return { key: "anthropic", label: "Anthropic", icon: claudeIcon };
-  if (model.openai_endpoint === "/v1/chat/completions") return { key: "openai-chat", label: "OpenAI Chat", icon: openAiIcon };
-  return { key: "openai-responses", label: "OpenAI Responses", icon: openAiIcon };
 }

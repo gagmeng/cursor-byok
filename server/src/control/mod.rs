@@ -2,6 +2,7 @@
 mod calls;
 mod harness;
 mod migration;
+mod model_system_prompts;
 mod models;
 mod overview;
 mod plugins;
@@ -121,6 +122,10 @@ pub fn api_router(service: ControlService) -> Router {
             get(models::preview_v0049).post(models::import_v0049),
         )
         .route("/__byok-api__/api/models/order", put(models::reorder))
+        .route(
+            "/__byok-api__/api/model-system-prompts",
+            get(model_system_prompts::get).put(model_system_prompts::update),
+        )
         .route("/__byok-api__/api/overview", get(overview::get))
         .route(
             "/__byok-api__/api/models/{model_hash}",

@@ -1,3 +1,4 @@
+//! Supplies in-memory management HTTP responses for the desktop demo.
 import type {
   CallDetail,
   CursorHarnessStatus,
@@ -5,6 +6,7 @@ import type {
   LlmCall,
   Model,
   ModelBadgeSettings,
+  ModelSystemPromptSettings,
   Overview,
   OverviewTokenUsageBucket,
   ProxySettings,
@@ -98,6 +100,7 @@ let proxySettings: ProxySettings = {
 };
 let tabSettings: TabSettings = { mode: "public", address: "" };
 let modelBadgeSettings: ModelBadgeSettings = { color: "neutral" };
+const modelSystemPrompts = new Map<string, ModelSystemPromptSettings>();
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
 
 export function installDemoApi() {
@@ -116,6 +119,15 @@ export function installDemoApi() {
     if (path === "/models" && method === "POST") return json(models);
     if (path === "/models/order") return json(models);
     if (path === "/models/discover") return json({ models: models.map((model) => model.model_id) });
+    if (path === "/model-system-prompts" && method === "GET") {
+      return json(modelSystemPrompts.get(url.searchParams.get("model_id") ?? "") ?? { enabled: false, content: "", position: "after" });
+    }
+    if (path === "/model-system-prompts" && method === "PUT") {
+      const { model_id, enabled, content, position } = body as ModelSystemPromptSettings & { model_id: string };
+      const settings: ModelSystemPromptSettings = { enabled, content, position };
+      modelSystemPrompts.set(model_id, settings);
+      return json(settings);
+    }
     if (path === "/models/import-v0049" && method === "GET") {
       return json({ source: "demo", total: 0, new_models: 0, existing_models: 0, models: [] });
     }

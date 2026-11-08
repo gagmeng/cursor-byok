@@ -73,6 +73,8 @@ struct AvailableModel {
     vendor_name: Option<String>,
     #[prost(message, optional, tag = "42")]
     vendor: Option<AvailableModelVendor>,
+    #[prost(bool, optional, tag = "45")]
+    supports_smart_mode_classifier: Option<bool>,
     #[prost(message, repeated, tag = "48")]
     model_picker_badges: Vec<ModelPickerBadge>,
 }
@@ -493,6 +495,7 @@ fn available_model(model: &ModelConfig, badges: &ModelBadgeSettings) -> Availabl
         inputbox_short_model_name: Some(model.display_name.clone()),
         supports_sandboxing: Some(true),
         supports_cmd_k: Some(false),
+        supports_smart_mode_classifier: Some(true),
         parameter_definitions: model_parameters(&contexts, true),
         variants,
         legacy_slugs,
@@ -759,6 +762,7 @@ fn available_plugin_model(
         inputbox_short_model_name: Some(model.display_name.clone()),
         supports_sandboxing: Some(true),
         supports_cmd_k: Some(false),
+        supports_smart_mode_classifier: Some(true),
         parameter_definitions: model_parameters(&contexts, true),
         variants,
         legacy_slugs,

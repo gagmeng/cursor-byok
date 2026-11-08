@@ -76,7 +76,7 @@ async function* sse(lines: string[]): AsyncGenerator<string> {
 
 function request(): LlmRequest {
   return {
-    instructions: "You are a coding assistant.",
+    instructions: "You are a coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀",
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     tools: [],
     reasoning: { enabled: true, effort: "medium" },
@@ -384,7 +384,7 @@ Deno.test("invoke streams normalized events from the Codex Responses API", async
   assertEquals(body.model, "gpt-test");
   assertEquals(body.store, false);
   assertEquals(body.reasoning, { summary: "auto", effort: "medium" });
-  assertEquals(body.instructions, "You are a coding assistant.");
+  assertEquals(body.instructions, "You are a coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀");
   assertEquals(body.include, ["reasoning.encrypted_content"]);
   assert(!("max_output_tokens" in body), "Codex endpoint rejects max_output_tokens");
   assertEquals(body.service_tier, "priority");

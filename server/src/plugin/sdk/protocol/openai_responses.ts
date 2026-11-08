@@ -16,8 +16,8 @@ export type OpenAiResponsesCall = {
   model: string;
   request: LlmRequest;
   headers?: Record<string, string>;
-  /** 最后合并进请求体,如 { store: false }。 */
-  extraBody?: Record<string, JsonValue>;
+  /** 最后合并进请求体,如 { store: false };值为 undefined 的键在序列化时剔除。 */
+  extraBody?: Record<string, JsonValue | undefined>;
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -127,7 +127,13 @@ export function buildResponsesBody(call: OpenAiResponsesCall): Record<string, Js
   if (call.request.latency === "fast") body.service_tier = "priority";
   // 会话级缓存键把请求钉到同一缓存分片,前缀缓存才能稳定命中。
   if (call.request.cacheKey !== null) body.prompt_cache_key = call.request.cacheKey;
-  return { ...body, ...call.extraBody };
+  // undefined 的键表示"从默认体中剔除该字段",合并时直接删除。
+  const merged: Record<string, JsonValue> = { ...body };
+  for (const [key, value] of Object.entries(call.extraBody ?? {})) {
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  return merged;
 }
 
 type ToolState = {

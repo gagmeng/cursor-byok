@@ -1,3 +1,4 @@
+//! Defines desktop management HTTP requests and native desktop actions.
 import type { CommitPromptLocale, Locale } from "../i18n/runtime";
 
 export type ModelType = "openai" | "anthropic";
@@ -86,6 +87,7 @@ export interface MigrationFile {
   exported_at_ms: number;
   models: ModelInput[];
   plugin_resources: { plugin_id: string; resource_type: string; accounts: unknown[] }[];
+  model_system_prompts: (ModelSystemPromptSettings & { model_id: string })[];
 }
 
 export interface MigrationResult {
@@ -193,6 +195,12 @@ export type ModelBadgeColor = "accent" | "neutral" | "success" | "warn" | "dange
 
 export interface ModelBadgeSettings {
   color: ModelBadgeColor;
+}
+
+export interface ModelSystemPromptSettings {
+  enabled: boolean;
+  content: string;
+  position: "before" | "after";
 }
 
 export type PluginRuntimeState = "uninitialized" | "initializing" | "ready" | "failed" | "unsupported";
@@ -507,6 +515,8 @@ export const api = {
   importV0049Models: () => request<LegacyModelImportResult>("/models/import-v0049", { method: "POST" }),
   updateModel: (hash: string, model: ModelInput) => request<Model>(`/models/${hash}`, { method: "PUT", body: JSON.stringify(model) }),
   deleteModel: (hash: string) => request<void>(`/models/${hash}`, { method: "DELETE" }),
+  modelSystemPrompt: (modelId: string) => request<ModelSystemPromptSettings>(`/model-system-prompts?model_id=${encodeURIComponent(modelId)}`),
+  setModelSystemPrompt: (modelId: string, settings: ModelSystemPromptSettings) => request<ModelSystemPromptSettings>("/model-system-prompts", { method: "PUT", body: JSON.stringify({ model_id: modelId, ...settings }) }),
   migrationExportUrl: () => `${API_ROOT}/migration/export`,
   migrationImport: (file: MigrationFile) => request<MigrationResult>("/migration/import", { method: "POST", body: JSON.stringify(file) }),
   testModel: (hash: string, testId: string, signal?: AbortSignal) => request<ModelConnectivityResult>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "POST", signal }),

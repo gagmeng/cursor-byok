@@ -73,7 +73,7 @@ async function* sse(lines: string[]): AsyncGenerator<string> {
 
 function request(): LlmRequest {
   return {
-    instructions: "You are a coding assistant.",
+    instructions: "You are a coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀",
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     tools: [],
     reasoning: { enabled: true, effort: "medium" },
@@ -278,6 +278,9 @@ Deno.test("invoke streams normalized events from the xAI Chat Completions API", 
   assertEquals(result, { status: "completed" });
   const body = JSON.parse(requestBody) as Record<string, unknown>;
   assertEquals(body.model, "grok-4");
+  assertEquals((body.messages as Array<Record<string, unknown>>)[0], {
+    role: "system", content: "You are a coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀",
+  });
   assertEquals(body.stream, true);
   assertEquals(body.prompt_cache_key, "conversation-1");
   assert(!("reasoning_effort" in body), "xAI endpoint rejects reasoning_effort");

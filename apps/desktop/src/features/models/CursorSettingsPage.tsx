@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+//! 管理 Cursor 模型设置、编辑草稿及管理接口调用。
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, configuredPluginModels, type Model, type ModelBadgeSettings, type ModelInput } from "../../shared/api";
 import { CursorBadgeSettings, DEFAULT_MODEL_BADGE_SETTINGS } from "./CursorBadgeSettings";
 import { CursorCaGate, CursorCaProvider, CursorModelGate, CursorModelProvider } from "./CursorGates";
-import { CursorModelCards, cursorModelGroups, type CursorModelGroup, type CursorModelGrouping } from "./CursorModelCards";
+import { CursorModelCards } from "./CursorModelCards";
+import { createCursorGroupingState, cursorGroupingReducer, cursorModelGroups, cursorPluginGroups, cursorGroupIsOpen, cursorAllGroupsExpanded, type CursorModelGroup } from "./cursorModelGrouping";
 import { CursorModelEditor, emptyCursorModelDraft, type CursorModelDraft } from "./CursorModelEditor";
 import { CursorModelTestResult, type CursorModelTestState } from "./CursorModelTestResult";
+import { CursorSystemPromptSettings } from "./CursorSystemPromptSettings";
+import { INITIAL_CURSOR_SYSTEM_PROMPT_EDITOR, cursorSystemPromptEditorReducer, modelSystemPromptStatus } from "./cursorSystemPrompt";
 import styles from "./CursorSettings.module.scss";
 import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "./LegacyModelImport";
@@ -16,7 +20,7 @@ import { Icon } from "../../shared/ui/Icon";
 import { Modal } from "../../shared/ui/Modal";
 import { Switch } from "../../shared/ui/Switch";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
-import { addIcon } from "../../shared/ui/icons";
+import { addIcon, collapseAllIcon, displaySettingsIcon, expandAllIcon, flatViewIcon, flaskIcon, providerViewIcon, stopIcon, typeViewIcon } from "../../shared/ui/icons";
 import { useMessage } from "../../shared/ui/message";
 import { PageActions } from "../../shell/PageActions";
 import { appStore, useAppStore } from "../../shared/store/appStore";
@@ -38,7 +42,8 @@ export function CursorSettingsPage() {
   const [modelTestResults, setModelTestResults] = useState<Map<string, CursorModelTestState>>(() => new Map());
   const [savingAndTesting, setSavingAndTesting] = useState(false);
   const [batchTesting, setBatchTesting] = useState(false);
-  const [grouping, setGrouping] = useState<CursorModelGrouping>("flat");
+  const [groupState, dispatchGrouping] = useReducer(cursorGroupingReducer, null, createCursorGroupingState);
+  const { grouping } = groupState;
   const [settingsGroup, setSettingsGroup] = useState<CursorModelGroup | null>(null);
   const [groupNameDraft, setGroupNameDraft] = useState("");
   const [groupBaseUrlDraft, setGroupBaseUrlDraft] = useState("");
@@ -48,17 +53,29 @@ export function CursorSettingsPage() {
   const [badgeDraft, setBadgeDraft] = useState<ModelBadgeSettings>(DEFAULT_MODEL_BADGE_SETTINGS);
   const [badgeOpen, setBadgeOpen] = useState(false);
   const [badgeBusy, setBadgeBusy] = useState(false);
+  const [systemPromptEditor, dispatchSystemPrompt] = useReducer(cursorSystemPromptEditorReducer, INITIAL_CURSOR_SYSTEM_PROMPT_EDITOR);
+  const systemPromptSession = useRef(0);
   const activeModelTests = useRef(new Map<string, { testId: string; controller: AbortController; cancelling: boolean }>());
   const caReady = cursorHarness?.ca === "ready";
   const cursorTakenOver = cursorHarness?.settings_applied ?? false;
   const takeoverLabel = cursorTakenOver ? t("关闭接管Cursor") : t("开启接管Cursor");
-  const pluginModels = configuredPluginModels(plugins);
+  const pluginModels = useMemo(() => configuredPluginModels(plugins), [plugins]);
   const testTargets = [
     ...models.map((model) => ({ model_hash: model.model_hash, display_name: model.display_name })),
     ...pluginModels.map((model) => ({ model_hash: model.id, display_name: model.displayName })),
   ];
-  const providerGroups = cursorModelGroups(models, "provider");
-  const typeGroups = cursorModelGroups(models, "type");
+  const activeGroups = useMemo(() => grouping === "flat" ? [] : cursorModelGroups(models, grouping), [models, grouping]);
+  const pluginGroups = useMemo(() => cursorPluginGroups(pluginModels, grouping), [pluginModels, grouping]);
+  const groupIds = useMemo(() => caReady ? [...activeGroups.map((group) => group.id), ...pluginGroups.map((group) => group.id)] : [], [activeGroups, pluginGroups, caReady]);
+  const openGroupIds = new Set(groupIds.filter((id) => cursorGroupIsOpen(groupState, id)));
+  const allExpanded = cursorAllGroupsExpanded(groupState, groupIds);
+  const bulkGroupLabel = allExpanded ? t("一键折叠") : t("一键展开");
+  const batchTestLabel = batchTesting ? t("取消全部测试") : t("一键测试");
+
+  // 消失的分组必须丢弃旧选择；仍存在的分组在模型刷新时保持展开状态。
+  useEffect(() => {
+    dispatchGrouping({ type: "retain-groups", grouping, ids: groupIds });
+  }, [grouping, groupIds]);
 
   useEffect(() => {
     if (caCommand) void api.copyCursorText(caCommand);
@@ -273,6 +290,27 @@ export function CursorSettingsPage() {
       setBadgeBusy(false);
     }
   };
+  const openSystemPrompt = async (modelId: string, displayName: string) => {
+    const sessionId = ++systemPromptSession.current;
+    dispatchSystemPrompt({ type: "open", sessionId, target: { modelId, displayName } });
+    try {
+      const settings = await api.modelSystemPrompt(modelId);
+      dispatchSystemPrompt({ type: "loaded", sessionId, settings });
+    } catch (cause) {
+      dispatchSystemPrompt({ type: "load-failed", sessionId, message: errorText(cause) });
+    }
+  };
+  const saveSystemPrompt = async () => {
+    const { target, loaded, draft: promptDraft, loading, saving, sessionId } = systemPromptEditor;
+    if (!target || !loaded || loading || saving || modelSystemPromptStatus(promptDraft).error) return;
+    dispatchSystemPrompt({ type: "save-started", sessionId });
+    try {
+      const settings = await api.setModelSystemPrompt(target.modelId, promptDraft);
+      dispatchSystemPrompt({ type: "saved", sessionId, settings });
+    } catch (cause) {
+      dispatchSystemPrompt({ type: "save-failed", sessionId, message: errorText(cause) });
+    }
+  };
   const reorderModels = useCallback(async (modelHashes: string[]) => {
     if (!await appStore.reorderCursorModels(modelHashes)) {
       message(appStore.getSnapshot().error || t("排序失败"));
@@ -281,8 +319,11 @@ export function CursorSettingsPage() {
 
   const list = <CursorModelCards
     models={models}
-    pluginModels={pluginModels}
+    groups={activeGroups}
+    pluginGroups={pluginGroups}
     grouping={grouping}
+    openGroupIds={openGroupIds}
+    onToggleGroup={(id) => dispatchGrouping({ type: "toggle-one", grouping, id })}
     disabled={cursorBusy}
     testingModelHashes={testingModelHashes}
     testResults={modelTestResults}
@@ -292,6 +333,7 @@ export function CursorSettingsPage() {
     onDelete={setDeleting}
     onTestPluginModel={(model) => void testModel({ model_hash: model.id, display_name: model.displayName })}
     onPluginSettings={() => navigate("/plugins")}
+    onSystemPrompt={(modelId, displayName) => void openSystemPrompt(modelId, displayName)}
     onReorder={reorderModels}
     onGroupSettings={openGroupSettings}
   />;
@@ -313,12 +355,13 @@ export function CursorSettingsPage() {
     </div>
   </CursorCaGate></CursorCaProvider>;
 
+  const systemPromptStatus = modelSystemPromptStatus(systemPromptEditor.draft);
   const editorTestState = editing ? modelTestResults.get(editing.model_hash) : undefined;
   const editorTesting = Boolean(editing && testingModelHashes.has(editing.model_hash));
-  const activeGroups = grouping === "provider" ? providerGroups : typeGroups;
   const pluginSectionHeight = pluginModels.length > 0 ? 60 + pluginModels.length * 56 : 0;
+  // 平铺视图插件模型与内置模型同为三列卡片;分组视图仍是插件分组行列表。
   const estimatedModelHeight = grouping === "flat"
-    ? Math.max(380, Math.ceil(models.length / 3) * 196 + pluginSectionHeight)
+    ? Math.max(380, (Math.ceil(models.length / 3) + Math.ceil(pluginModels.length / 3)) * 196)
     : Math.max(380, activeGroups.reduce((height, group) => height + 60 + group.models.length * 56, 0) + Math.max(0, activeGroups.length - 1) * 20 + pluginSectionHeight);
 
   return <>
@@ -336,13 +379,30 @@ export function CursorSettingsPage() {
             }}
           />
         </TooltipTrigger>
-        {testTargets.length > 0 && <div className={styles.groupActions} role="group" aria-label={t("操作")}>
-          <button type="button" aria-pressed={grouping === "flat"} onClick={() => setGrouping("flat")}>{t("默认平铺")}</button>
-          <button type="button" aria-pressed={grouping === "provider"} onClick={() => setGrouping("provider")}>{t("按供应商")}</button>
-          <button type="button" aria-pressed={grouping === "type"} onClick={() => setGrouping("type")}>{t("按类型")}</button>
-          <button type="button" disabled={cursorBusy} onClick={openBadgeSettings}>{t("显示设置")}</button>
-          <button type="button" disabled={cursorBusy || (!batchTesting && testingModelHashes.size > 0)} onClick={() => void (batchTesting ? cancelAllModelTests() : testAllModels())}>{batchTesting ? t("取消全部测试") : t("一键测试")}</button>
-        </div>}
+        <div className={styles.groupActions} role="group" aria-label={t("操作")}>
+          <TooltipTrigger label={t("默认平铺")}>
+            <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-pressed={grouping === "flat"} aria-label={t("默认平铺")} onClick={() => dispatchGrouping({ type: "change-view", grouping: "flat" })}><Icon icon={flatViewIcon} size="1.1em" /></button>
+          </TooltipTrigger>
+          <TooltipTrigger label={bulkGroupLabel}>
+            <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-label={bulkGroupLabel} disabled={grouping === "flat" || groupIds.length === 0} onClick={() => dispatchGrouping({ type: "toggle-all", grouping, ids: groupIds })}>
+              <Icon icon={allExpanded ? collapseAllIcon : expandAllIcon} size="1.1em" />
+            </button>
+          </TooltipTrigger>
+          <TooltipTrigger label={t("按供应商")}>
+            <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-pressed={grouping === "provider"} aria-label={t("按供应商")} onClick={() => dispatchGrouping({ type: "change-view", grouping: "provider" })}><Icon icon={providerViewIcon} size="1.1em" /></button>
+          </TooltipTrigger>
+          <TooltipTrigger label={t("按类型")}>
+            <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-pressed={grouping === "type"} aria-label={t("按类型")} onClick={() => dispatchGrouping({ type: "change-view", grouping: "type" })}><Icon icon={typeViewIcon} size="1.1em" /></button>
+          </TooltipTrigger>
+          {testTargets.length > 0 && <>
+            <TooltipTrigger label={t("显示设置")}>
+              <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-label={t("显示设置")} disabled={cursorBusy} onClick={openBadgeSettings}><Icon icon={displaySettingsIcon} size="1.1em" /></button>
+            </TooltipTrigger>
+            <TooltipTrigger label={batchTestLabel}>
+              <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-label={batchTestLabel} disabled={cursorBusy || (!batchTesting && testingModelHashes.size > 0)} onClick={() => void (batchTesting ? cancelAllModelTests() : testAllModels())}><Icon icon={batchTesting ? stopIcon : flaskIcon} size="1.1em" /></button>
+            </TooltipTrigger>
+          </>}
+        </div>
       </div>
     </PageActions>
     <PageActions><TooltipTrigger label={caReady ? t("添加模型") : t("请先初始化 CA")}><button className={controls.iconButton} aria-label={t("添加模型")} disabled={!caReady || cursorBusy} onClick={openNew}><Icon icon={addIcon} size="1.1em" /></button></TooltipTrigger></PageActions>
@@ -368,6 +428,37 @@ export function CursorSettingsPage() {
     <ConfirmDialog open={caCommand !== null} title={t("安装本地 CA")} cancelLabel={t("关闭")} confirmLabel={t("打开终端")} onCancel={() => setCaCommand(null)} onConfirm={openCaTerminal}>
       <div className={styles.editor}><strong>{t("需要授权安装证书")}</strong><span>{t("安装命令已自动复制。点击“打开终端”，将命令粘贴到终端中执行，并按提示输入密码。")}</span><pre className={styles.command}>{caCommand}</pre></div>
     </ConfirmDialog>
+    <Modal
+      open={systemPromptEditor.target !== null}
+      title={t("系统提示词")}
+      wide
+      fullHeight
+      busy={systemPromptEditor.saving}
+      submitDisabled={!systemPromptEditor.loaded || systemPromptEditor.loading || systemPromptStatus.error !== null}
+      onClose={() => dispatchSystemPrompt({ type: "close" })}
+      onSubmit={() => void saveSystemPrompt()}
+      submitLabel={t("保存")}
+      banner={systemPromptEditor.loading
+        ? <span role="status">{t("加载中…")}</span>
+        : systemPromptEditor.error && <span role="alert">{systemPromptEditor.error.operation === "load"
+          ? t("加载系统提示词失败：{error}", { error: systemPromptEditor.error.message })
+          : t("保存系统提示词失败：{error}", { error: systemPromptEditor.error.message })}</span>}
+      secondaryAction={systemPromptEditor.error?.operation === "load" && systemPromptEditor.target && <button
+        type="button"
+        className={controls.secondary}
+        onClick={() => {
+          const target = systemPromptEditor.target;
+          if (target) void openSystemPrompt(target.modelId, target.displayName);
+        }}
+      >{t("重试")}</button>}
+    >
+      {systemPromptEditor.target && <CursorSystemPromptSettings
+        modelName={systemPromptEditor.target.displayName}
+        settings={systemPromptEditor.draft}
+        disabled={!systemPromptEditor.loaded || systemPromptEditor.loading || systemPromptEditor.saving}
+        onChange={(settings) => dispatchSystemPrompt({ type: "change", settings })}
+      />}
+    </Modal>
     <Modal open={badgeOpen} title={t("模型显示设置")} busy={badgeBusy} onClose={() => setBadgeOpen(false)} onSubmit={() => void saveBadgeSettings()} submitLabel={t("保存")}>
       <CursorBadgeSettings settings={badgeDraft} sample={models[0] ?? null} onChange={setBadgeDraft} />
     </Modal>

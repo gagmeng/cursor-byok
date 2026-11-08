@@ -10,7 +10,7 @@ import { ConfirmDialog } from "../shared/ui/ConfirmDialog";
 import controls from "../shared/ui/Controls.module.scss";
 import { Icon } from "../shared/ui/Icon";
 import { TooltipTrigger } from "../shared/ui/TooltipTrigger";
-import { flatColorAboutIcon, flatColorAreaChartIcon, flatColorCrystalOscillatorIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, refreshIcon } from "../shared/ui/icons";
+import { flatColorAboutIcon, flatColorAreaChartIcon, flatColorCrystalOscillatorIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, reloadIcon } from "../shared/ui/icons";
 import { useMessage } from "../shared/ui/message";
 import { VirtualList } from "../shared/virtual/VirtualList";
 import { useI18n } from "../i18n/store";
@@ -134,7 +134,7 @@ export function AppLayout() {
         <Card className={styles.actions}>
           <div ref={setLeftActionTarget} className={styles.pageActions} />
           {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>
-            <Icon className={busy ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
+            <Icon className={busy ? controls.spin : ""} icon={reloadIcon} size="1.1em" />
           </button></TooltipTrigger>}
           <div ref={setRightActionTarget} className={styles.pageActions} />
         </Card>

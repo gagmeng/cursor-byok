@@ -10,12 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use super::service::ControlService;
 use crate::{
-    model::{ModelConfig, ModelConfigInput},
+    model::{ModelConfig, ModelConfigInput, ModelSystemPromptConfig},
     Result,
 };
 
 pub const FORMAT: &str = "cursor-byok-migration";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// The plugin's resource accounts, kept in the shape the plugin's own import
 /// parser already understands so import reuses that path instead of growing a
@@ -35,6 +35,7 @@ pub struct MigrationFile {
     pub exported_at_ms: i64,
     pub models: Vec<ModelConfigInput>,
     pub plugin_resources: Vec<MigrationPluginResources>,
+    pub model_system_prompts: Vec<ModelSystemPromptConfig>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -156,6 +157,7 @@ mod tests {
             exported_at_ms: 0,
             models: Vec::new(),
             plugin_resources: Vec::new(),
+            model_system_prompts: Vec::new(),
         };
         let json = serde_json::to_value(&file).unwrap();
         assert_eq!(json["format"], FORMAT);

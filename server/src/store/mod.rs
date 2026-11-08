@@ -9,6 +9,7 @@ mod llm_calls;
 mod maintenance;
 mod messages;
 mod migrations;
+mod model_system_prompts;
 mod models;
 mod overview;
 mod runs;

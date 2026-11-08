@@ -49,6 +49,8 @@ export type LlmTool = {
   description: string;
   /** 工具参数的 JSON Schema。 */
   parameters: JsonValue;
+  /** OpenAI Chat 线上的 strict 开关;缺省时该字段不上行。 */
+  strict?: boolean;
 };
 
 export type LlmRequest = {

@@ -1,3 +1,4 @@
+//! 定义 Cursor 模型设置页的布局与控件样式。
 @use "../../styles/typography" as type;
 
 .page {
@@ -36,13 +37,19 @@
 
   button {
     height: 25px;
-    padding: 0 8px;
+    padding: 0 4px;
     color: var(--vscode-descriptionForeground);
     background: transparent;
     border: 0;
     border-right: 1px solid var(--vscode-sideBar-border);
     font-size: type.$font-size-xs;
     white-space: nowrap;
+
+    &.groupCommand {
+      width: 25px;
+      flex: 0 0 25px;
+      padding: 0;
+    }
 
     &:last-child { border-right: 0; }
     &:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); }
@@ -82,10 +89,10 @@
 }
 
 .modelGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 12px;
-
 }
 .modelGroups {
   display: flex;
@@ -180,14 +187,16 @@
 }
 .modelCard {
   position: relative;
-  padding: 16px;
+  // 测试状态不能改变卡片宽度，否则会挤走同一行的其他模型。
+  flex: 0 0 auto;
+  width: 302px;
+  max-width: 100%;
+  padding: 12px;
 }
 .modelCardContent {
-  min-height: 120px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 .modelCardTop {
   min-width: 0;
@@ -229,20 +238,28 @@
   font-size: type.$font-size-2xs;
 }
 .modelCardTest {
-  min-height: 31px;
   display: flex;
   align-items: center;
+
+  // 简短状态不应拉成空白面板，详细或错误状态仍受卡片宽度约束。
+  > div {
+    width: fit-content;
+    max-width: 100%;
+    padding: 4px 8px;
+    border-radius: 999px;
+  }
 }
 .modelCardActions {
   display: flex;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px;
 
-  // 空间不足时按钮收缩显示省略号,而不是换行。
+  // 操作文案必须可辨认，不能为保持单行而压缩成省略号。
   > button {
-    min-width: 0;
-    flex: 0 1 auto;
+    min-width: max-content;
+    flex: 0 0 auto;
+    padding-inline: 6px;
   }
 }
 .deleteButton:hover {

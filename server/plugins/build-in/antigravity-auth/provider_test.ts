@@ -55,7 +55,7 @@ async function* sse(lines: string[]): AsyncGenerator<string> {
 
 function request(): LlmRequest {
   return {
-    instructions: "You are an AI coding assistant.",
+    instructions: "You are an AI coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀",
     messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
     tools: [],
     reasoning: { enabled: true, effort: "medium" },
@@ -113,6 +113,8 @@ Deno.test("provider parses usage metadata including cachedContentTokenCount as c
   const body = JSON.parse(requestBody) as Record<string, unknown>;
   assertEquals(body.project, "test-project-123");
   assertEquals(body.model, "gemini-3.7-flash-medium");
+  const system = (body.request as Record<string, unknown>).systemInstruction as { parts: { text: string }[] };
+  assertEquals(system.parts[0].text, "You are an AI coding assistant.\n\nCUSTOM_SYSTEM_PROMPT 中文😀");
   assert(!("sessionId" in body), "unsupported sessionId field was sent");
   assert(!("conversationId" in body), "unsupported conversationId field was sent");
 
