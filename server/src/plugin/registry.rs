@@ -383,6 +383,7 @@ impl PluginRegistry {
                     entry.manifest.name.clone(),
                     entry.icon.clone(),
                     serde_json::to_value(&resource.display_name)?,
+                    callback.is_some_and(|value| value.native_signin),
                 )
                 .await?;
                 let redirect_uri = callback.redirect_uri.clone();

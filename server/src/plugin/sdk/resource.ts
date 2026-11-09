@@ -128,7 +128,16 @@ export type OAuth2AuthorizationCodeAddMethod = {
   displayName: LocalizedText;
   description?: LocalizedText;
   /** 仅在上游 OAuth 客户端要求固定 loopback 地址时指定。 */
-  callback?: { port?: number; path?: string };
+  callback?: {
+    port?: number;
+    path?: string;
+    /**
+     * 上游把凭证直接放进回调参数（`user_id` + `access_token`），不接受 state。
+     * 宿主对这一个方法放弃 state 校验；防伪由 begin 时生成、只存在内存里的
+     * 密钥材料承担，`complete` 必须能证明自己解开了它。
+     */
+    nativeSignin?: boolean;
+  };
   begin(
     input: {
       redirectUri: string;

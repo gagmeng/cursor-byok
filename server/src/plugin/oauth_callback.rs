@@ -42,6 +42,8 @@ impl Drop for CallbackHandle {
 #[derive(Clone)]
 struct CallbackState {
     expected_state: String,
+    /// 该方案把凭证放在回调参数里而不是 code，且不认 state。
+    native_signin: bool,
     plugin_name: String,
     plugin_icon: String,
     resource_name: serde_json::Value,
@@ -53,6 +55,8 @@ struct CallbackState {
 struct CallbackQuery {
     code: Option<String>,
     state: Option<String>,
+    user_id: Option<String>,
+    access_token: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
 }
@@ -64,6 +68,7 @@ pub(super) async fn bind(
     plugin_name: String,
     plugin_icon: String,
     resource_name: serde_json::Value,
+    native_signin: bool,
 ) -> Result<CallbackHandle> {
     let address = SocketAddr::from(([127, 0, 0, 1], port.unwrap_or(0)));
     let listener = tokio::net::TcpListener::bind(address)
@@ -79,6 +84,7 @@ pub(super) async fn bind(
     let shutdown = CancellationToken::new();
     let state = CallbackState {
         expected_state,
+        native_signin,
         plugin_name,
         plugin_icon,
         resource_name,
@@ -110,7 +116,31 @@ async fn handle_callback(
     Query(query): Query<CallbackQuery>,
 ) -> Html<String> {
     let locale = callback_locale(&headers);
-    if query.state.as_deref() != Some(state.expected_state.as_str()) {
+    // native_signin 方案的回调里没有 state;它的防伪来自 begin 时生成、
+    // 只存活在内存中的 RSA 私钥——回调携带的 token 用它加密，伪造者无法解开。
+    let native_credentials = state
+        .native_signin
+        .then(|| {
+            query
+                .user_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .zip(
+                    query
+                        .access_token
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty()),
+                )
+                .map(|(user_id, access_token)| {
+                    serde_json::json!({ "user_id": user_id, "access_token": access_token })
+                        .to_string()
+                })
+        })
+        .flatten();
+    if native_credentials.is_none() && query.state.as_deref() != Some(state.expected_state.as_str())
+    {
         return Html(render_page(
             &state,
             locale,
@@ -123,12 +153,13 @@ async fn handle_callback(
         ));
     }
 
-    let result = match query.code.filter(|code| !code.trim().is_empty()) {
-        Some(code) => Ok(code),
-        None => Err(query.error_description.or(query.error).unwrap_or_else(|| {
-            localized(locale, "授权被取消。", "Authorization was cancelled.").to_owned()
-        })),
-    };
+    let result =
+        match native_credentials.or_else(|| query.code.filter(|code| !code.trim().is_empty())) {
+            Some(code) => Ok(code),
+            None => Err(query.error_description.or(query.error).unwrap_or_else(|| {
+                localized(locale, "授权被取消。", "Authorization was cancelled.").to_owned()
+            })),
+        };
     let Some(sender) = state.sender.lock().await.take() else {
         return Html(render_page(
             &state,
@@ -283,6 +314,7 @@ mod tests {
     fn escapes_plugin_content_in_callback_page() {
         let state = CallbackState {
             expected_state: "state".into(),
+            native_signin: false,
             plugin_name: "<plugin>".into(),
             plugin_icon: "data:image/svg+xml;base64,abc".into(),
             resource_name: serde_json::json!({"en-US": "Accounts & keys"}),
@@ -295,6 +327,104 @@ mod tests {
         assert!(!page.contains("<plugin>"));
     }
 
+    /// 有些上游（Zed native_app_signin）把凭证直接放进回调参数而不是 code，
+    /// 且不认 state。放宽必须由插件逐个方案声明：默认的 state 校验是其他所有
+    /// 插件唯一的 CSRF 防线，不能因为一个上游需要就被整体撤掉。
+    #[tokio::test]
+    async fn state_is_required_unless_the_plugin_declares_native_signin() {
+        let mut named = bind(
+            None,
+            "/",
+            "expected".into(),
+            "Zed".into(),
+            "data:image/svg+xml;base64,abc".into(),
+            serde_json::json!("Zed account"),
+            true,
+        )
+        .await
+        .unwrap();
+        let client = reqwest::Client::new();
+        let redirect_uri = named.redirect_uri.clone();
+        let browser = tokio::spawn(async move {
+            client
+                .get(format!(
+                    "{redirect_uri}?user_id=42&access_token=encrypted_token"
+                ))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap()
+        });
+        let request = (&mut named.receiver).await.unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&request.result.unwrap()).unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({ "user_id": "42", "access_token": "encrypted_token" })
+        );
+        request
+            .response
+            .send(CallbackOutcome {
+                success: true,
+                message: None,
+            })
+            .unwrap();
+        assert!(browser.await.unwrap().contains("Resource added"));
+
+        // 未声明该方案的插件，无 state 的回调必须继续被拒。
+        let mut ordinary = bind(
+            None,
+            "/",
+            "expected".into(),
+            "Plugin".into(),
+            "data:image/svg+xml;base64,abc".into(),
+            serde_json::json!("Account"),
+            false,
+        )
+        .await
+        .unwrap();
+        let rejected = reqwest::Client::new()
+            .get(format!(
+                "{}?user_id=42&access_token=encrypted_token",
+                ordinary.redirect_uri
+            ))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(rejected.contains("Authorization state did not match"));
+        assert!(ordinary.receiver.try_recv().is_err());
+    }
+
+    /// 只有一半凭证时不能当成成功回调交付，否则插件会拿着残缺的 JSON 去解密。
+    #[tokio::test]
+    async fn native_signin_callback_needs_both_credentials() {
+        let mut callback = bind(
+            None,
+            "/",
+            "expected".into(),
+            "Zed".into(),
+            "data:image/svg+xml;base64,abc".into(),
+            serde_json::json!("Zed account"),
+            true,
+        )
+        .await
+        .unwrap();
+        let page = reqwest::Client::new()
+            .get(format!("{}?user_id=42", callback.redirect_uri))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(page.contains("Authorization state did not match"));
+        assert!(callback.receiver.try_recv().is_err());
+    }
+
     #[tokio::test]
     async fn callback_rejects_wrong_state_then_delivers_code() {
         let mut callback = bind(
@@ -304,6 +434,7 @@ mod tests {
             "Plugin".into(),
             "data:image/svg+xml;base64,abc".into(),
             serde_json::json!("Account"),
+            false,
         )
         .await
         .unwrap();

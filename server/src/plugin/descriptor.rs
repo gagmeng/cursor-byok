@@ -77,6 +77,10 @@ pub struct OAuthCallbackDefinition {
     pub port: Option<u16>,
     #[serde(default)]
     pub path: Option<String>,
+    /// 上游把凭证直接放在回调查询参数里（`user_id` + `access_token`），
+    /// 不经过 code、也不带 state。宿主据此放弃 state 校验并把两个参数交给插件。
+    #[serde(default)]
+    pub native_signin: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -301,6 +305,29 @@ impl PluginModelDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 回调方案默认必须走 state 校验；只有显式声明 nativeSignin 的方案才携带
+    /// user_id/access_token。缺省值是 false，旧插件的 descriptor 原样解析。
+    #[test]
+    fn callback_defaults_to_state_protected_without_native_signin() {
+        let plain: AddMethodDefinition = serde_json::from_value(serde_json::json!({
+            "type": "oauth2.authorization-code",
+            "id": "plain",
+            "displayName": "Plain",
+            "callback": { "path": "/oauth-callback" }
+        }))
+        .unwrap();
+        assert!(!plain.callback.unwrap().native_signin);
+
+        let native: AddMethodDefinition = serde_json::from_value(serde_json::json!({
+            "type": "oauth2.authorization-code",
+            "id": "native",
+            "displayName": "Native",
+            "callback": { "path": "/", "nativeSignin": true }
+        }))
+        .unwrap();
+        assert!(native.callback.unwrap().native_signin);
+    }
 
     #[test]
     fn parses_stable_model_ids_with_slashes() {

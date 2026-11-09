@@ -265,12 +265,65 @@ const OPENCODE_AUTH: &[(&str, &str)] = &[
     ),
 ];
 
+const ZED_AUTH: &[(&str, &str)] = &[
+    (
+        "plugin.json",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/plugin.json"
+        )),
+    ),
+    (
+        "main.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/main.ts"
+        )),
+    ),
+    (
+        "oauth.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/oauth.ts"
+        )),
+    ),
+    (
+        "resources.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/resources.ts"
+        )),
+    ),
+    (
+        "models.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/models.ts"
+        )),
+    ),
+    (
+        "provider.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/provider.ts"
+        )),
+    ),
+    (
+        "assets/zed.svg",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/zed-auth/assets/zed.svg"
+        )),
+    ),
+];
+
 const PLUGINS: &[(&str, &[(&str, &str)])] = &[
     ("codex-auth", CODEX_AUTH),
     ("grok-auth", GROK_AUTH),
     ("antigravity-auth", ANTIGRAVITY_AUTH),
     ("zcode-auth", ZCODE_AUTH),
     ("opencode-auth", OPENCODE_AUTH),
+    ("zed-auth", ZED_AUTH),
 ];
 
 /// 把内置插件预装到 installed 目录。manifest 的 version 是缓存键:
@@ -381,6 +434,9 @@ mod tests {
             .path()
             .join("opencode-auth/assets/opencode.svg")
             .is_file());
+        assert!(root.path().join("zed-auth/plugin.json").is_file());
+        assert!(root.path().join("zed-auth/oauth.ts").is_file());
+        assert!(root.path().join("zed-auth/assets/zed.svg").is_file());
 
         // 版本一致:本地改动与额外文件保持原样,不发生任何写盘。
         std::fs::write(plugin.join("main.ts"), "edited").unwrap();

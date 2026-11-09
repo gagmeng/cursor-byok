@@ -88,6 +88,7 @@ export function __descriptor(definition: ProviderPluginDefinition) {
           ? {
             port: method.callback?.port ?? null,
             path: method.callback?.path ?? "/oauth-callback",
+            nativeSignin: method.callback?.nativeSignin ?? false,
           }
           : null,
       })),
