@@ -88,12 +88,6 @@
   }
 }
 
-.modelGrid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 12px;
-}
 .modelGroups {
   display: flex;
   flex-direction: column;
@@ -108,19 +102,27 @@
   align-items: center;
   gap: 8px;
 }
-.groupSettings {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 2px;
+// 分组头的图标命令:与展开箭头同高,悬停只变底色,不改变分组头布局。
+.groupCommand {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   color: var(--vscode-descriptionForeground);
   background: none;
   border: none;
-  font-size: type.$font-size-xs;
-  white-space: nowrap;
+  border-radius: 4px;
   cursor: pointer;
 
-  &:hover { color: var(--vscode-foreground); }
+  &:hover {
+    color: var(--vscode-foreground);
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+.groupDelete:hover {
+  color: var(--vscode-errorForeground, #f48771);
 }
 .groupChevron {
   display: flex;
@@ -155,42 +157,17 @@
   display: flex;
   flex-direction: column;
 }
-.modelRow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-  padding: 10px 2px;
-  border-top: 1px solid var(--vscode-sideBar-border);
-}
-.modelRowName {
-  min-width: 0;
-  flex: 1 1 200px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-
-  .modelRowNameText,
-  .modelRowModelId {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .modelRowNameText {
-    color: var(--vscode-foreground);
-    font-size: type.$font-size-base;
-  }
-  .modelRowModelId {
-    color: var(--vscode-descriptionForeground);
-    font-size: type.$font-size-2xs;
-  }
+// 卡片网格:平铺与分组共用。274px = 五个中文操作(248px)+ 卡片左右内边距(24px),
+// 列宽低于此值时按钮会被挤到第二行;窗口拉伸只改变列数,不再压窄卡片。
+.modelGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(274px, 1fr));
+  align-items: stretch;
+  gap: 12px;
 }
 .modelCard {
   position: relative;
-  // 测试状态不能改变卡片宽度，否则会挤走同一行的其他模型。
-  flex: 0 0 auto;
-  width: 302px;
-  max-width: 100%;
+  min-width: 0;
   padding: 12px;
 }
 .modelCardContent {
@@ -240,73 +217,23 @@
 .modelCardTest {
   display: flex;
   align-items: center;
-
-  // 简短状态不应拉成空白面板，详细或错误状态仍受卡片宽度约束。
-  > div {
-    width: fit-content;
-    max-width: 100%;
-    padding: 4px 8px;
-    border-radius: 999px;
-  }
 }
 .modelCardActions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 4px;
 
-  // 操作文案必须可辨认，不能为保持单行而压缩成省略号。
+  // 操作文案必须可辨认，不能为保持单行而压缩成省略号；
+  // 内边距收到 4px 是为了让分组内 290px 的卡片仍能单行放下五个操作。
   > button {
     min-width: max-content;
     flex: 0 0 auto;
-    padding-inline: 6px;
+    padding-inline: 4px;
   }
 }
 .deleteButton:hover {
   color: var(--vscode-errorForeground, #f48771);
-}
-.sortHandle {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 1;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  color: transparent;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  opacity: 0;
-  cursor: grab;
-  touch-action: none;
-  transition: opacity 160ms ease, color 160ms ease, border-color 160ms ease, background-color 160ms ease;
-
-  &:focus-visible,
-  .modelCard:hover & {
-    color: var(--vscode-foreground);
-    background: var(--vscode-list-hoverBackground);
-    border-color: var(--vscode-sideBar-border);
-    opacity: 1;
-  }
-  &:active {
-    cursor: grabbing;
-  }
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.3;
-  }
-}
-.sortGhost {
-  opacity: 0.4;
-}
-.sortChosen {
-  border-color: var(--vscode-focusBorder);
-}
-.sortDragging {
-  cursor: grabbing;
 }
 .editor {
   display: flex;

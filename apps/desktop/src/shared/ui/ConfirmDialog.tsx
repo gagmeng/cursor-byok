@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { Modal } from "./Modal";
 
-export function ConfirmDialog({ id, open, title, children, busy, wide, cancelLabel = t("取消"), confirmLabel = t("确认"), onCancel, onConfirm }: {
+export function ConfirmDialog({ id, open, title, children, busy, wide, cancelLabel = t("取消"), confirmLabel = t("确认"), confirmDisabled, onCancel, onConfirm }: {
   id?: string;
   open: boolean;
   title: string;
@@ -10,6 +10,7 @@ export function ConfirmDialog({ id, open, title, children, busy, wide, cancelLab
   wide?: boolean;
   cancelLabel?: string;
   confirmLabel?: string;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -25,6 +26,7 @@ export function ConfirmDialog({ id, open, title, children, busy, wide, cancelLab
     initialFocus="submit"
     closeLabel={cancelLabel}
     submitLabel={confirmLabel}
+    submitDisabled={confirmDisabled}
     onClose={onCancel}
     onSubmit={onConfirm}
   >

@@ -456,7 +456,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
             let prompt_tables: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
                  AND name IN ('model_system_prompts', 'conversation_system_prompts')",
@@ -468,6 +468,49 @@ mod tests {
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
         }
+    }
+
+    #[tokio::test]
+    async fn replacing_the_prompt_position_keeps_existing_rows() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        let through_eleven = Migrator {
+            migrations: Cow::Owned(historical.iter().take(11).cloned().collect()),
+            ..Migrator::DEFAULT
+        };
+        through_eleven.run(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO model_system_prompts(model_id, enabled, content, position, updated_at_ms)
+             VALUES ('model', 1, 'keep me', 'after', 7)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        run(&pool, Path::new("prompt-replace.db")).await.unwrap();
+
+        let (content, position, updated_at_ms): (String, String, i64) = sqlx::query_as(
+            "SELECT content, position, updated_at_ms FROM model_system_prompts WHERE model_id = 'model'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            (content.as_str(), position.as_str(), updated_at_ms),
+            ("keep me", "after", 7),
+            "the rebuild must preserve saved prompts and their timestamps"
+        );
+        sqlx::query(
+            "INSERT INTO model_system_prompts(model_id, enabled, content, position, updated_at_ms)
+             VALUES ('other', 1, 'replacement', 'replace', 8)",
+        )
+        .execute(&pool)
+        .await
+        .expect("the migrated schema must accept a replacing prompt");
     }
 
     #[test]

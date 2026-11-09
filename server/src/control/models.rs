@@ -1,6 +1,6 @@
 //! Implements model configuration endpoints.
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -13,17 +13,27 @@ use crate::{
 
 use super::{
     ControlService, DiscoveredModels, LegacyModelImportPreview, LegacyModelImportResult,
-    ModelConnectivityResult, ModelDiscoveryInput,
+    MagpieImportPreview, ModelConnectivityResult, ModelDiscoveryInput,
 };
+
+#[derive(Deserialize)]
+pub struct ImportMagpieModels {
+    /// 用户勾选的模型 id;空数组表示一个都不导(不是"全部")。
+    pub model_ids: Vec<String>,
+    /// 显式指定的网关地址;缺省时由服务端按 MAGPIE_ADDR / settings.json / 默认端口探测。
+    #[serde(default)]
+    pub address: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct MagpiePreviewQuery {
+    #[serde(default)]
+    pub address: Option<String>,
+}
 
 #[derive(Deserialize)]
 pub struct SaveModels {
     pub models: Vec<ModelConfigInput>,
-}
-
-#[derive(Deserialize)]
-pub struct ModelOrder {
-    pub model_hashes: Vec<String>,
 }
 
 pub async fn list(State(service): State<ControlService>) -> Result<Json<Vec<ModelConfig>>> {
@@ -38,13 +48,6 @@ pub async fn create(
         StatusCode::CREATED,
         Json(service.create_models(&input.models).await?),
     ))
-}
-
-pub async fn reorder(
-    State(service): State<ControlService>,
-    Json(input): Json<ModelOrder>,
-) -> Result<Json<Vec<ModelConfig>>> {
-    Ok(Json(service.reorder_models(&input.model_hashes).await?))
 }
 
 pub async fn remove(
@@ -83,6 +86,24 @@ pub async fn discover(
     Json(input): Json<ModelDiscoveryInput>,
 ) -> Result<Json<DiscoveredModels>> {
     Ok(Json(service.discover_models(&input).await?))
+}
+
+pub async fn magpie_preview(
+    State(service): State<ControlService>,
+    Query(query): Query<MagpiePreviewQuery>,
+) -> Result<Json<MagpieImportPreview>> {
+    Ok(Json(service.magpie_models(query.address.as_deref()).await?))
+}
+
+pub async fn magpie_import(
+    State(service): State<ControlService>,
+    Json(input): Json<ImportMagpieModels>,
+) -> Result<Json<LegacyModelImportResult>> {
+    Ok(Json(
+        service
+            .import_magpie_models(input.address.as_deref(), &input.model_ids)
+            .await?,
+    ))
 }
 
 pub async fn import_v0049(

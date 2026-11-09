@@ -1,5 +1,5 @@
 //! 管理 Cursor 模型设置、编辑草稿及管理接口调用。
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, configuredPluginModels, type Model, type ModelBadgeSettings, type ModelInput } from "../../shared/api";
 import { CursorBadgeSettings, DEFAULT_MODEL_BADGE_SETTINGS } from "./CursorBadgeSettings";
@@ -13,6 +13,7 @@ import { INITIAL_CURSOR_SYSTEM_PROMPT_EDITOR, cursorSystemPromptEditorReducer, m
 import styles from "./CursorSettings.module.scss";
 import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "./LegacyModelImport";
+import { MagpieModelImportDialog, useMagpieModelImport } from "./MagpieModelImport";
 import { RemoteSshHelp } from "./RemoteSshHelp";
 import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
 import { FormField, SecretTextInput, TextInput } from "../../shared/ui/FormControls";
@@ -38,6 +39,7 @@ export function CursorSettingsPage() {
   const [caCommand, setCaCommand] = useState<string | null>(null);
   const [waitingForCaRefresh, setWaitingForCaRefresh] = useState(false);
   const [deleting, setDeleting] = useState<Model | null>(null);
+  const [deletingGroup, setDeletingGroup] = useState<CursorModelGroup | null>(null);
   const [confirmDisableTakeover, setConfirmDisableTakeover] = useState(false);
   const [remoteSshHelpOpen, setRemoteSshHelpOpen] = useState(false);
   const [testingModelHashes, setTestingModelHashes] = useState<Set<string>>(() => new Set());
@@ -51,6 +53,7 @@ export function CursorSettingsPage() {
   const [groupBaseUrlDraft, setGroupBaseUrlDraft] = useState("");
   const [groupApiKeyDraft, setGroupApiKeyDraft] = useState("");
   const [groupSettingsBusy, setGroupSettingsBusy] = useState(false);
+  const magpieImport = useMagpieModelImport();
   const [badgeSettings, setBadgeSettings] = useState<ModelBadgeSettings | null>(null);
   const [badgeDraft, setBadgeDraft] = useState<ModelBadgeSettings>(DEFAULT_MODEL_BADGE_SETTINGS);
   const [badgeOpen, setBadgeOpen] = useState(false);
@@ -99,6 +102,12 @@ export function CursorSettingsPage() {
     setEditing(null);
     setModelOptions([]);
     setDraft(next);
+  };
+  // 导入弹窗是独立模态:先收起模型编辑器,避免两层模态叠加争抢 Escape 与焦点。
+  const openMagpieImport = () => {
+    setDraft(null);
+    setEditing(null);
+    magpieImport.start();
   };
   const openEdit = (model: Model) => {
     setEditing(model);
@@ -248,6 +257,25 @@ export function CursorSettingsPage() {
     setGroupApiKeyDraft(sharedValue(group.models.map((model) => model.api_key)) ?? "");
     setSettingsGroup(group);
   };
+  const deleteGroup = async (group: CursorModelGroup) => {
+    setDeletingGroup(null);
+    // 逐个删除而不是新开一个批量接口:每个模型各自有既有删除语义
+    // (清理系统提示词、解绑调用记录),复用它不会漏掉任何级联。
+    const failures = [];
+    for (const model of group.models) {
+      try {
+        await api.deleteModel(model.model_hash);
+      } catch (cause) {
+        failures.push(errorText(cause));
+      }
+    }
+    await appStore.refresh();
+    if (failures.length > 0) {
+      message(t("分组中 {failed} 个模型删除失败：{error}", { failed: failures.length, error: failures[0] }));
+      return;
+    }
+    message(t("已删除分组「{name}」的 {count} 个模型", { name: group.label, count: group.models.length }));
+  };
   const saveGroupSettings = async () => {
     if (!settingsGroup) return;
     const group_name = groupNameDraft.trim() || null;
@@ -313,12 +341,6 @@ export function CursorSettingsPage() {
       dispatchSystemPrompt({ type: "save-failed", sessionId, message: errorText(cause) });
     }
   };
-  const reorderModels = useCallback(async (modelHashes: string[]) => {
-    if (!await appStore.reorderCursorModels(modelHashes)) {
-      message(appStore.getSnapshot().error || t("排序失败"));
-    }
-  }, [message]);
-
   const list = <CursorModelCards
     models={models}
     groups={activeGroups}
@@ -336,8 +358,8 @@ export function CursorSettingsPage() {
     onTestPluginModel={(model) => void testModel({ model_hash: model.id, display_name: model.displayName })}
     onPluginSettings={() => navigate("/plugins")}
     onSystemPrompt={(modelId, displayName) => void openSystemPrompt(modelId, displayName)}
-    onReorder={reorderModels}
     onGroupSettings={openGroupSettings}
+    onGroupDelete={setDeletingGroup}
   />;
 
   const refreshCa = async () => {
@@ -360,11 +382,11 @@ export function CursorSettingsPage() {
   const systemPromptStatus = modelSystemPromptStatus(systemPromptEditor.draft);
   const editorTestState = editing ? modelTestResults.get(editing.model_hash) : undefined;
   const editorTesting = Boolean(editing && testingModelHashes.has(editing.model_hash));
-  const pluginSectionHeight = pluginModels.length > 0 ? 60 + pluginModels.length * 56 : 0;
-  // 平铺视图插件模型与内置模型同为三列卡片;分组视图仍是插件分组行列表。
+  const pluginSectionHeight = pluginModels.length > 0 ? 60 + cardRows(pluginModels.length) * 196 : 0;
+  // 两种视图都是三列卡片网格:平铺只是一张无分组头的"网格"。
   const estimatedModelHeight = grouping === "flat"
-    ? Math.max(380, (Math.ceil(models.length / 3) + Math.ceil(pluginModels.length / 3)) * 196)
-    : Math.max(380, activeGroups.reduce((height, group) => height + 60 + group.models.length * 56, 0) + Math.max(0, activeGroups.length - 1) * 20 + pluginSectionHeight);
+    ? Math.max(380, (cardRows(models.length) + cardRows(pluginModels.length)) * 196)
+    : Math.max(380, activeGroups.reduce((height, group) => height + 60 + cardRows(group.models.length) * 196, 0) + Math.max(0, activeGroups.length - 1) * 20 + pluginSectionHeight);
 
   return <>
     <PageActions position="left">
@@ -414,6 +436,7 @@ export function CursorSettingsPage() {
       <TooltipTrigger label={caReady ? t("添加模型") : t("请先初始化 CA")}><button className={controls.iconButton} aria-label={t("添加模型")} disabled={!caReady || cursorBusy} onClick={openNew}><Icon icon={addIcon} size="1.1em" /></button></TooltipTrigger>
     </PageActions>
     {remoteSshHelpOpen && <RemoteSshHelp onClose={() => setRemoteSshHelpOpen(false)} />}
+    <MagpieModelImportDialog state={magpieImport} />
     <PageContent title="Cursor" sections={[{ key: "cursor-settings", estimatedHeight: estimatedModelHeight, content }]} />
     <ConfirmDialog
       open={confirmDisableTakeover}
@@ -430,7 +453,7 @@ export function CursorSettingsPage() {
     </ConfirmDialog>
     <Modal fullHeight open={draft !== null} title={editing ? t("编辑模型") : t("添加模型")} banner={draft && (editorTesting || editorTestState) ? <CursorModelTestResult state={editorTestState} testing={editorTesting} /> : undefined} busy={cursorBusy || savingAndTesting} onClose={() => { if (editing && editorTesting) void cancelModelTest(editing.model_hash); setDraft(null); setEditing(null); }} onSubmit={() => void save()} submitLabel={t("保存")} secondaryAction={<button type="button" className={controls.secondary} disabled={cursorBusy || savingAndTesting} onClick={() => void (editorTesting && editing ? cancelModelTest(editing.model_hash) : saveAndTest())}>{savingAndTesting ? t("处理中…") : editorTesting ? t("取消测试") : t("保存并测试")}</button>}>
       {draft && <>
-        <CursorModelEditor draft={draft} modelOptions={modelOptions} discovering={discovering} zcodePluginReady={isZcodePluginReady(plugins)} editingHash={editing?.model_hash ?? null} onChange={setDraft} onDiscover={discover} />
+        <CursorModelEditor draft={draft} modelOptions={modelOptions} discovering={discovering} zcodePluginReady={isZcodePluginReady(plugins)} editingHash={editing?.model_hash ?? null} magpieImport={{ busy: magpieImport.busy, onPick: openMagpieImport }} onChange={setDraft} onDiscover={discover} />
       </>}
     </Modal>
     <ConfirmDialog open={caCommand !== null} title={t("安装本地 CA")} cancelLabel={t("关闭")} confirmLabel={t("打开终端")} onCancel={() => setCaCommand(null)} onConfirm={openCaTerminal}>
@@ -484,7 +507,22 @@ export function CursorSettingsPage() {
       </div>}
     </Modal>
     <ConfirmDialog open={deleting !== null} title={t("删除模型")} cancelLabel={t("取消")} confirmLabel={t("删除")} onCancel={() => setDeleting(null)} onConfirm={() => { if (deleting) void appStore.deleteModel(deleting.model_hash); setDeleting(null); }}><p>{t("确定删除这个模型吗？")}</p></ConfirmDialog>
+    <ConfirmDialog
+      open={deletingGroup !== null}
+      title={t("删除分组")}
+      cancelLabel={t("取消")}
+      confirmLabel={t("删除")}
+      onCancel={() => setDeletingGroup(null)}
+      onConfirm={() => { if (deletingGroup) void deleteGroup(deletingGroup); }}
+    >
+      <p>{deletingGroup ? t("确定删除分组「{name}」及其 {count} 个模型吗？此操作不可撤销。", { name: deletingGroup.label, count: deletingGroup.models.length }) : ""}</p>
+    </ConfirmDialog>
   </>;
+}
+
+/** 与 .modelGrid 的最小列宽一致:virtual 分节只需按最窄情况估算行数。 */
+function cardRows(count: number): number {
+  return Math.ceil(count / 2);
 }
 
 function modelInput(model: Model): ModelInput {

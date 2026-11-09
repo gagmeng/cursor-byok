@@ -38,12 +38,16 @@ export function CursorSystemPromptSettings({ modelName, settings, disabled, onCh
         onChange={(enabled) => onChange({ ...settings, enabled })}
       />
     </div>
-    <FormField label={t("插入位置")} hint={t("将自定义系统提示词放在 Cursor 原有提示词之前或之后，不覆盖原有提示词。")}>
+    <FormField label={t("组合方式")} hint={t("前置/后置把自定义提示词接到 Cursor 原有提示词旁；替换则完全用自定义提示词取代原有提示词。")}>
       <Select
         value={settings.position}
         disabled={disabled}
-        ariaLabel={t("系统提示词插入位置")}
-        options={[{ value: "before", label: t("前置") }, { value: "after", label: t("后置") }]}
+        ariaLabel={t("系统提示词组合方式")}
+        options={[
+          { value: "before", label: t("前置") },
+          { value: "after", label: t("后置") },
+          { value: "replace", label: t("替换") },
+        ]}
         onChange={(position) => onChange({ ...settings, position: position as ModelSystemPromptSettings["position"] })}
       />
     </FormField>

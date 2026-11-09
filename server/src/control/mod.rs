@@ -1,6 +1,7 @@
 //! Exposes the local control API.
 mod calls;
 mod harness;
+mod magpie;
 mod migration;
 mod model_system_prompts;
 mod models;
@@ -24,7 +25,8 @@ use url::{Host, Url};
 
 pub use service::{
     CallDetail, CallSummary, ControlService, DiscoveredModels, LegacyModelImportPreview,
-    LegacyModelImportResult, ModelConnectivityResult, ModelDiscoveryInput, ObservabilitySettings,
+    LegacyModelImportResult, MagpieImportModel, MagpieImportPreview, ModelConnectivityResult,
+    ModelDiscoveryInput, ObservabilitySettings,
 };
 
 pub fn web_router(service: ControlService, assets: impl AsRef<std::path::Path>) -> Router {
@@ -117,11 +119,12 @@ pub fn api_router(service: ControlService) -> Router {
             get(models::list).post(models::create),
         )
         .route("/__byok-api__/api/models/discover", post(models::discover))
+        .route("/__byok-api__/api/magpie", get(models::magpie_preview))
+        .route("/__byok-api__/api/magpie/import", post(models::magpie_import))
         .route(
             "/__byok-api__/api/models/import-v0049",
             get(models::preview_v0049).post(models::import_v0049),
         )
-        .route("/__byok-api__/api/models/order", put(models::reorder))
         .route(
             "/__byok-api__/api/model-system-prompts",
             get(model_system_prompts::get).put(model_system_prompts::update),

@@ -200,6 +200,17 @@ export const appStore = {
       return null;
     } finally { update({ cursorBusy: false }); }
   },
+  async importMagpieModels(modelIds: string[], address?: string) {
+    update({ cursorBusy: true, error: null });
+    try {
+      const result = await api.importMagpieModels(modelIds, address);
+      await appStore.refresh();
+      return result;
+    } catch (cause) {
+      update({ error: cause instanceof Error ? cause.message : String(cause) });
+      return null;
+    } finally { update({ cursorBusy: false }); }
+  },
   async updateCursorModel(hash: string, model: ModelInput) {
     update({ cursorBusy: true, error: null });
     try {
@@ -210,36 +221,6 @@ export const appStore = {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
       return null;
     } finally { update({ cursorBusy: false }); }
-  },
-  async reorderCursorModels(modelHashes: string[]) {
-    const previous = snapshot.models;
-    const byHash = new Map(previous.map((model) => [model.model_hash, model]));
-    if (modelHashes.length !== previous.length || new Set(modelHashes).size !== previous.length) {
-      update({ error: t("模型配置已发生变化，请刷新后重试") });
-      return false;
-    }
-    const reordered: Model[] = [];
-    for (const [index, hash] of modelHashes.entries()) {
-      const model = byHash.get(hash);
-      if (!model) {
-        update({ error: t("模型配置已发生变化，请刷新后重试") });
-        return false;
-      }
-      reordered.push({ ...model, sort_order: index + 1 });
-    }
-    update({ models: reordered, cursorBusy: true, error: null });
-    try {
-      update({ models: await api.reorderModels(modelHashes) });
-      return true;
-    } catch (cause) {
-      update({
-        models: previous,
-        error: cause instanceof Error ? cause.message : String(cause),
-      });
-      return false;
-    } finally {
-      update({ cursorBusy: false });
-    }
   },
 
   async refreshCalls() {

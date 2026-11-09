@@ -13,6 +13,10 @@ pub enum SystemPromptPosition {
     Before,
     #[default]
     After,
+    /// Replaces the Cursor original instead of adding to it. Every provider
+    /// turn starts from this text, so the prompt the user wrote is the whole
+    /// system prompt.
+    Replace,
 }
 
 impl SystemPromptPosition {
@@ -20,6 +24,7 @@ impl SystemPromptPosition {
         match self {
             Self::Before => "before",
             Self::After => "after",
+            Self::Replace => "replace",
         }
     }
 }
@@ -52,10 +57,9 @@ impl ModelSystemPromptSettings {
         if !self.enabled {
             return Ok(base.into());
         }
-        if base.is_empty() {
-            return Ok(self.content.clone());
-        }
         Ok(match self.position {
+            SystemPromptPosition::Replace => self.content.clone(),
+            _ if base.is_empty() => self.content.clone(),
             SystemPromptPosition::Before => format!("{}\n\n{base}", self.content),
             SystemPromptPosition::After => format!("{base}\n\n{}", self.content),
         })

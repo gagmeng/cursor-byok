@@ -1,5 +1,7 @@
-.root { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.scrollArea { width: 100%; height: 100%; }
+/* 纵向 flex 链:弹窗内容区只有 min-height:0 与 flex 分配,高度是"待定"的;
+   子级若用 height:100% 会退回到内容高度,viewport 就永远不可滚动。 */
+.root { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.scrollArea { width: 100%; height: 100%; flex: 1 1 auto; min-height: 0; }
 .horizontal .scrollArea { padding-bottom: 7px; }
 .horizontalViewport { overflow-x: auto; }
 .horizontalTrack { position: absolute; z-index: 20; right: 0; bottom: 0; left: 0; height: 7px; opacity: 0; pointer-events: none; touch-action: none; user-select: none; transition: opacity 120ms ease; }

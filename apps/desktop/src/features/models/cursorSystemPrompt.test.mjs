@@ -58,6 +58,22 @@ test("disabling_keeps_complete_multiline_content_and_position", () => {
   assert.deepEqual(disabled.loaded, settings);
 });
 
+test("replacing_is_a_valid_position_with_the_same_limits_and_draft_rules", () => {
+  // 「替换」不是另一种输入校验:它和前置/后置一样只是一个摆放方式,
+  // 字节上限、空白校验、草稿恢复都不能因为选了替换而改变。
+  assert.deepEqual(modelSystemPromptStatus({ ...settings, content: "完全替换", position: "replace" }), {
+    byteLength: 12, error: null,
+  });
+  assert.equal(modelSystemPromptStatus({ ...settings, content: " \n", position: "replace" }).error, "empty");
+  const edited = cursorSystemPromptEditorReducer(loadedEditor(), {
+    type: "change", settings: { ...settings, position: "replace" },
+  });
+  const saving = cursorSystemPromptEditorReducer(edited, { type: "save-started", sessionId: 1 });
+  assert.equal(saving.saving, true, "选择替换后必须能保存");
+  const saved = cursorSystemPromptEditorReducer(saving, { type: "saved", sessionId: 1, settings: edited.draft });
+  assert.deepEqual(saved.loaded, { ...settings, position: "replace" });
+});
+
 test("new_model_edits_start_disabled_empty_and_after_without_reusing_another_draft", () => {
   assert.deepEqual(DEFAULT_MODEL_SYSTEM_PROMPT_SETTINGS, { enabled: false, content: "", position: "after" });
   const opened = cursorSystemPromptEditorReducer(loadedEditor(), {

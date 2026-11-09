@@ -190,43 +190,6 @@ impl Store {
         session.committed();
         Ok(())
     }
-
-    pub async fn reorder_models(&self, model_hashes: &[String]) -> Result<Vec<ModelConfig>> {
-        let current = self.models().await?;
-        let current_hashes = current
-            .iter()
-            .map(|model| model.model_hash.as_str())
-            .collect::<HashSet<_>>();
-        let requested_hashes = model_hashes
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        if model_hashes.len() != current.len()
-            || requested_hashes.len() != current.len()
-            || requested_hashes != current_hashes
-        {
-            return Err(Error::Config(
-                "model configuration changed; refresh and try sorting again".into(),
-            ));
-        }
-
-        let now = now_ms();
-        let mut session = self.write_session().await?;
-        let mut transaction = session.begin().await?;
-        for (index, hash) in model_hashes.iter().enumerate() {
-            sqlx::query(
-                "UPDATE model_configs SET sort_order = ?, updated_at_ms = ? WHERE model_hash = ?",
-            )
-            .bind(i64::try_from(index + 1).expect("model order fits in i64"))
-            .bind(now)
-            .bind(hash)
-            .execute(&mut *transaction)
-            .await?;
-        }
-        transaction.commit().await?;
-        session.committed();
-        self.models().await
-    }
 }
 
 async fn insert_model(

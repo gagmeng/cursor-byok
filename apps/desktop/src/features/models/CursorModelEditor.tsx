@@ -14,7 +14,7 @@ import { useAppStore } from "../../shared/store/appStore";
 import type { Model } from "../../shared/api";
 import { TooltipTrigger } from "../../shared/ui/TooltipTrigger";
 import { claudeIcon, informationOutlineIcon, openAiIcon } from "../../shared/ui/icons";
-import { CursorPresetChips } from "./CursorPresetChips";
+import { CursorPresetChips, type MagpieChip } from "./CursorPresetChips";
 import { modelNoteTooLong } from "./modelNote";
 import styles from "./CursorSettings.module.scss";
 
@@ -58,13 +58,15 @@ export const emptyCursorModelDraft = (): CursorModelDraft => ({
   anthropicExtraParamsText: "{}",
 });
 
-export function CursorModelEditor({ draft, modelOptions, discovering, zcodePluginReady, editingHash, onChange, onDiscover }: {
+export function CursorModelEditor({ draft, modelOptions, discovering, zcodePluginReady, editingHash, magpieImport, onChange, onDiscover }: {
   draft: CursorModelDraft;
   modelOptions: string[];
   discovering: boolean;
   zcodePluginReady: boolean;
   /** 编辑中的模型 hash;排除自身作为故障转移目标。 */
   editingHash?: string | null;
+  /** 「常用预设」里的 Magpie 项:探测本机网关批量导入,而不是填充字段。 */
+  magpieImport: MagpieChip;
   onChange: (draft: CursorModelDraft) => void;
   onDiscover: () => Promise<boolean>;
 }) {
@@ -153,7 +155,7 @@ export function CursorModelEditor({ draft, modelOptions, discovering, zcodePlugi
   };
 
   return <div className={styles.editor}>
-    <CursorPresetChips type={draft.model.type} baseUrl={draft.model.base_url} onPick={applyPreset} />
+    <CursorPresetChips type={draft.model.type} baseUrl={draft.model.base_url} magpie={magpieImport} onPick={applyPreset} />
     <div className={styles.grid}>
       <FormField label={t("模型类型")}><Select ariaLabel={t("模型类型")} value={draft.providerId} options={providerOptions} onChange={setProvider} /></FormField>
       {draft.model.type === "openai" && <FormField label={t("请求协议")} hint={t("只决定请求与响应的格式，不会改变请求地址。")}> <Select ariaLabel={t("请求协议")} value={draft.model.openai_endpoint} options={[

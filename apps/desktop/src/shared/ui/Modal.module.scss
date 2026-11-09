@@ -33,14 +33,16 @@
   border-radius: var(--oa-overlay-radius);
   box-shadow: 0 20px 50px rgb(0 0 0 / 45%);
 
-  header {
+  // 只作用于弹窗自己的标题栏和页脚;内容里若出现 <header> 是内容自己的结构,
+  // 被这里的边距染色会让内容层的缩进/对齐失效。
+  > header {
     flex: 0 0 auto;
     padding: 10px 18px;
     border-bottom: 1px solid var(--vscode-editorWidget-border);
     font-size: type.$font-size-base;
     font-weight: 630;
   }
-  footer {
+  > footer {
     flex: 0 0 auto;
     display: flex;
     justify-content: flex-end;

@@ -4,6 +4,7 @@ import type {
   CursorHarnessStatus,
   ExternalApiSettings,
   LlmCall,
+  MagpieImportModel,
   Model,
   ModelBadgeSettings,
   ModelSystemPromptSettings,
@@ -17,7 +18,8 @@ import type {
 const API_ROOT = "/__byok-api__/api";
 const FIXED_NOW = Date.UTC(2026, 7, 27, 8, 0, 0);
 
-const models: Model[] = [
+// 演示里的模型目录可被删除操作修改:分组删除要能看到模型真的消失。
+let models: Model[] = [
   createModel({ hash: "mock-claude-sonnet", order: 1, name: "Claude Sonnet 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-sonnet-4-20250514" }),
   createModel({ hash: "mock-claude-opus", order: 2, name: "Claude Opus 4", type: "anthropic", url: "https://api.anthropic.com", modelId: "claude-opus-4-20250514" }),
   createModel({ hash: "mock-gpt", order: 3, name: "GPT-5.2", type: "openai", url: "https://api.openai.com", modelId: "gpt-5.2" }),
@@ -101,6 +103,15 @@ let proxySettings: ProxySettings = {
 let tabSettings: TabSettings = { mode: "public", address: "" };
 let modelBadgeSettings: ModelBadgeSettings = { color: "neutral" };
 const modelSystemPrompts = new Map<string, ModelSystemPromptSettings>();
+/** 演示里的 magpie 目录:一小份真实形状的数据,让「查询」有可勾选的结果。 */
+const magpieModels: MagpieImportModel[] = [
+  { model_id: "trae-cn/glm-5.3", display_name: "GLM-5.3", provider: "trae-cn", routing_group: false, endpoint: "openai-chat", context_window_tokens: 116_000, max_completion_tokens: 16_000, reasoning_levels: ["low", "high"], existing: false },
+  { model_id: "trae-cn/doubao-seed-code", display_name: "Doubao Seed Code", provider: "trae-cn", routing_group: false, endpoint: "openai-chat", context_window_tokens: 256_000, max_completion_tokens: 32_000, reasoning_levels: [], existing: false },
+  { model_id: "qoder-cn/ultimate", display_name: "Qoder Ultimate", provider: "qoder-cn", routing_group: false, endpoint: "openai-chat", context_window_tokens: 200_000, max_completion_tokens: 16_000, reasoning_levels: [], existing: true },
+  { model_id: "anyrouter/claude-sonnet-4.6", display_name: "Claude Sonnet 4.6", provider: "anyrouter", routing_group: false, endpoint: "anthropic", context_window_tokens: 200_000, max_completion_tokens: 32_000, reasoning_levels: ["low", "medium", "high"], existing: false },
+  // 路由组:magpie 把同名模型的多个供应商合成一条入口,与上面的成员模型重复。
+  { model_id: "auto/glm-5.3", display_name: "GLM-5.3", provider: "auto", routing_group: true, endpoint: "openai-chat", context_window_tokens: 116_000, max_completion_tokens: 16_000, reasoning_levels: ["low", "high"], existing: false },
+];
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
 
 export function installDemoApi() {
@@ -117,7 +128,6 @@ export function installDemoApi() {
 
     if (path === "/models" && method === "GET") return json(models);
     if (path === "/models" && method === "POST") return json(models);
-    if (path === "/models/order") return json(models);
     if (path === "/models/discover") return json({ models: models.map((model) => model.model_id) });
     if (path === "/model-system-prompts" && method === "GET") {
       return json(modelSystemPrompts.get(url.searchParams.get("model_id") ?? "") ?? { enabled: false, content: "", position: "after" });
@@ -128,6 +138,8 @@ export function installDemoApi() {
       modelSystemPrompts.set(model_id, settings);
       return json(settings);
     }
+    if (path === "/magpie" && method === "GET") return json({ address: url.searchParams.get("address") || "127.0.0.1:3425", version: "0.1.3359", models: magpieModels });
+    if (path === "/magpie/import") return json({ imported: 0, skipped: 0, total: 0 });
     if (path === "/models/import-v0049" && method === "GET") {
       return json({ source: "demo", total: 0, new_models: 0, existing_models: 0, models: [] });
     }
@@ -136,7 +148,10 @@ export function installDemoApi() {
       return json({ duration_ms: 1_284, first_valid_response_ms: 418, output_tokens: 42, tokens_per_second: 38.6, tokens_estimated: false, output: "Mock connectivity test passed." });
     }
     if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) || /^\/models\/[^/]+$/.test(path)) {
-      return method === "DELETE" ? empty() : json(models[0]);
+      if (method !== "DELETE") return json(models[0]);
+      const hash = decodeURIComponent(path.split("/")[2] ?? "");
+      models = models.filter((model) => model.model_hash !== hash);
+      return empty();
     }
     if (path === "/overview") return json(createOverview(url.searchParams));
     if (path === "/llm-calls") return json(calls);

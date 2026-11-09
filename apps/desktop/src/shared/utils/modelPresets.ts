@@ -2,9 +2,13 @@ import type { ModelType } from "../api";
 import deepseekIcon from "../assets/provider-icons/deepseek.svg";
 import huoshanIcon from "../assets/provider-icons/huoshan.png";
 import kimiIcon from "../assets/provider-icons/kimi.svg";
+import magpieIcon from "../assets/provider-icons/magpie.png";
 import minimaxIcon from "../assets/provider-icons/minimax.svg";
 import zhipuIcon from "../assets/provider-icons/zhipu.svg";
 import { defaultCustomHeaders } from "./modelDefaults";
+
+/** Magpie 不是字段预设:它探测本机网关后批量建模型,图标与其它预设一起展示。 */
+export const magpiePresetIcon: string = magpieIcon;
 
 export interface ModelPresetEntry {
   model_id: string;

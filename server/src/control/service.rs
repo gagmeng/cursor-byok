@@ -15,7 +15,7 @@ use url::Url;
 use crate::{
     local_app::CursorHarness,
     model::{
-        ContentPart, CursorRunTraceArtifact, CursorRunTraceSummary, LlmCallRequest,
+        model_hash, ContentPart, CursorRunTraceArtifact, CursorRunTraceSummary, LlmCallRequest,
         LlmCallResponseChunk, LlmCallSummary, ModelConfig, ModelConfigInput, ModelInvocation,
         ModelRequest, ModelSpec, ModelSystemPromptSettings, ModelType, Overview, ProjectedContent,
         ProjectedMessage, PromptSpec, ProviderType, Role,
@@ -52,6 +52,39 @@ pub struct LegacyModelImportResult {
     pub imported: usize,
     pub skipped: usize,
     pub total: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MagpieImportPreview {
+    pub address: String,
+    pub version: String,
+    pub models: Vec<MagpieImportModel>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MagpieImportModel {
+    pub model_id: String,
+    pub display_name: String,
+    pub provider: String,
+    /// magpie 的路由组:一条 id 在多供应商/多账号间负载均衡,不是单个供应商模型。
+    pub routing_group: bool,
+    /// 该模型在 magpie 上原生可用的协议:`openai-chat` / `openai-responses` / `anthropic`。
+    pub endpoint: String,
+    pub context_window_tokens: Option<u64>,
+    pub max_completion_tokens: Option<u64>,
+    pub reasoning_levels: Vec<String>,
+    pub existing: bool,
+}
+
+/// 导入前要知道哪些已经配置过。判定键必须与 `create_models_if_missing`
+/// 的冲突键一致,否则预览说"新增"、导入却跳过。
+async fn existing_model_hashes(store: &Store) -> Result<std::collections::HashSet<String>> {
+    Ok(store
+        .models()
+        .await?
+        .into_iter()
+        .map(|model| model.model_hash)
+        .collect())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -436,10 +469,6 @@ impl ControlService {
         self.store.create_models(models).await
     }
 
-    pub async fn reorder_models(&self, model_hashes: &[String]) -> Result<Vec<ModelConfig>> {
-        self.store.reorder_models(model_hashes).await
-    }
-
     pub async fn delete_model(&self, model_hash: &str) -> Result<()> {
         self.store.delete_model(model_hash).await
     }
@@ -635,6 +664,57 @@ impl ControlService {
             },
         )
         .await
+    }
+
+    pub async fn magpie_models(&self, address: Option<&str>) -> Result<MagpieImportPreview> {
+        let gateway = super::magpie::resolve(&super::magpie::client()?, address).await?;
+        let existing = existing_model_hashes(&self.store).await?;
+        let models = gateway
+            .models
+            .iter()
+            .map(|model| {
+                let input = super::magpie::candidate_input(model, &gateway.address);
+                MagpieImportModel {
+                    model_id: model.model_id.clone(),
+                    display_name: model.display_name.clone(),
+                    provider: model.provider.clone(),
+                    routing_group: model.routing_group,
+                    endpoint: model.endpoint.label().to_owned(),
+                    context_window_tokens: model.context_window_tokens,
+                    max_completion_tokens: model.max_completion_tokens,
+                    reasoning_levels: model.reasoning_levels.clone(),
+                    existing: model_hash(&input).is_ok_and(|hash| existing.contains(&hash)),
+                }
+            })
+            .collect();
+        Ok(MagpieImportPreview {
+            address: gateway.address,
+            version: gateway.version,
+            models,
+        })
+    }
+
+    pub async fn import_magpie_models(
+        &self,
+        address: Option<&str>,
+        model_ids: &[String],
+    ) -> Result<LegacyModelImportResult> {
+        // 重新探测而不是信任预览:预览到确认之间 magpie 可能被关掉或换了端口。
+        let gateway = super::magpie::resolve(&super::magpie::client()?, address).await?;
+        let selected: BTreeSet<&str> = model_ids.iter().map(String::as_str).collect();
+        let inputs = gateway
+            .models
+            .iter()
+            .filter(|model| selected.contains(model.model_id.as_str()))
+            .map(|model| super::magpie::candidate_input(model, &gateway.address))
+            .collect::<Vec<_>>();
+        let total = inputs.len();
+        let imported = self.store.create_models_if_missing(&inputs).await?;
+        Ok(LegacyModelImportResult {
+            imported,
+            skipped: total - imported,
+            total,
+        })
     }
 
     pub async fn import_v0049_models(&self) -> Result<LegacyModelImportResult> {

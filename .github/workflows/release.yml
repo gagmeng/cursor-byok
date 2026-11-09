@@ -128,6 +128,27 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
+      # tauri-action has no body_path input, so the notes file is read here and
+      # handed over as the release body. A beta keeps its test warning in front.
+      - name: Read release notes
+        id: notes
+        shell: bash
+        run: |
+          notes_path=".github/release-notes.md"
+          test -f "${notes_path}"
+          {
+            if [[ "${{ contains(needs.prepare.outputs.version, '-') }}" = "true" ]]; then
+              echo "**Beta release — test build, not for production use.**"
+              echo
+            fi
+            cat "${notes_path}"
+          } > "${RUNNER_TEMP}/release-body.md"
+          {
+            echo "body<<CURSOR_BYOK_RELEASE_BODY"
+            cat "${RUNNER_TEMP}/release-body.md"
+            echo "CURSOR_BYOK_RELEASE_BODY"
+          } >> "${GITHUB_OUTPUT}"
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,7 +159,7 @@ jobs:
           projectPath: apps/desktop
           tagName: v__VERSION__
           releaseName: Cursor BYOK v__VERSION__
-          releaseBody: ${{ contains(needs.prepare.outputs.version, '-') && 'Beta release. Download the installer for your platform from the assets below.' || 'Download the installer for your platform from the assets below.' }}
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
@@ -214,12 +235,14 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
+          # The legacy updater shows release_notes in its dialog; point it at the
+          # same file the GitHub Release body uses so both say the same thing.
           node .github/scripts/generate-legacy-update.mjs \
             --version "${VERSION}" \
             --repository "${GITHUB_REPOSITORY}" \
             --assets-dir legacy-update \
             --output legacy-update/update.json \
-            --notes "Cursor BYOK v${VERSION}"
+            --notes "$(cat .github/release-notes.md)"
 
       - name: Generate signed Windows portable update manifest
         env:

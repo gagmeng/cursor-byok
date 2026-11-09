@@ -1,0 +1,170 @@
+@use "../../styles/typography" as type;
+
+.content {
+  display: grid;
+  gap: 14px;
+}
+
+.address {
+  display: grid;
+  gap: 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+
+  small {
+    font-size: type.$font-size-xs;
+  }
+}
+
+.addressRow {
+  display: flex;
+  gap: 8px;
+
+  input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.source {
+  display: grid;
+  gap: 6px;
+
+  code {
+    overflow-wrap: anywhere;
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+}
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+
+  > div {
+    display: grid;
+    gap: 3px;
+    padding: 10px;
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 5px;
+  }
+
+  small {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+}
+
+.groups {
+  display: grid;
+  gap: 10px;
+}
+
+.group {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 5px;
+}
+
+// 分组头:折叠箭头 + 勾选框 + 路由组说明;说明允许换行,不挤掉勾选框。
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+
+  small {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+// 折叠箭头与行内勾选框同高,悬停只变底色,不改变分组头高度。
+.groupToggle {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--vscode-descriptionForeground);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--vscode-foreground);
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.note {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+// 模型行相对分组勾选框再缩进一段:先越过折叠箭头列(箭头宽度 + 分组头间隙),
+// 再加一段层级间距。直接写 padding-left 会被模型行自身的内边距吃掉,
+// 最后只剩几像素,看不出「上面的分组管着下面的行」。
+$group-toggle-width: 20px;
+$group-gap: 6px;
+$row-indent: 20px;
+
+.models {
+  display: grid;
+  gap: 2px;
+  padding-left: $group-toggle-width + $group-gap + $row-indent;
+}
+
+.model {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+
+  small {
+    overflow: hidden;
+    margin-left: auto;
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.existing,
+.hint {
+  color: var(--vscode-descriptionForeground);
+}
+
+.existing {
+  flex: 0 0 auto;
+  font-size: type.$font-size-xs;
+}
+
+.hint {
+  font-size: type.$font-size-xs;
+}
+
+@media (max-width: 680px) {
+  .model {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+
+    small {
+      margin-left: 0;
+    }
+  }
+}

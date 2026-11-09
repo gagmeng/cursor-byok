@@ -37,19 +37,6 @@
   border-color: color-mix(in srgb, var(--vscode-errorForeground, #f48771) 28%, transparent);
 }
 
-.compact {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  font-size: type.$font-size-2xs;
-  white-space: nowrap;
-  cursor: default;
-}
-
 .summary {
   min-width: 0;
   overflow: hidden;

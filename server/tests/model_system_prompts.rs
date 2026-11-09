@@ -106,8 +106,15 @@ async fn migration_preserves_rows_on_a_real_database_copy() {
             );
         }
     }
-    assert_eq!(after.get("model_system_prompts"), Some(&0));
-    assert_eq!(after.get("conversation_system_prompts"), Some(&0));
+    // The prompt tables are the ones a table rebuild touches; their rows must
+    // survive unchanged instead of being recreated empty.
+    for table in ["model_system_prompts", "conversation_system_prompts"] {
+        assert_eq!(
+            after.get(table),
+            before.get(table),
+            "rebuilding {table} must keep exactly the rows the copy already had"
+        );
+    }
     sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
         .execute(store.pool())
         .await
@@ -530,6 +537,79 @@ async fn an_existing_default_root_keeps_custom_prompts_disabled_until_a_new_conv
 }
 
 #[tokio::test]
+async fn replacing_the_system_prompt_discards_the_cursor_original() {
+    use cursor_server::model::{ConversationId, ModelSystemPromptSettings, SystemPromptPosition};
+
+    let (_directory, store) = fixtures::temp_store().await;
+    store
+        .set_model_system_prompt(
+            "model",
+            &ModelSystemPromptSettings {
+                enabled: true,
+                content: "只使用中文回答。".into(),
+                position: SystemPromptPosition::Replace,
+            },
+        )
+        .await
+        .unwrap();
+    let defaults = BTreeMap::from([
+        ("agent".into(), "base agent".into()),
+        ("ask".into(), "base ask".into()),
+    ]);
+    for (mode, base) in [("agent", "base agent"), ("ask", "base ask")] {
+        assert_eq!(
+            store
+                .conversation_system_prompt(
+                    &ConversationId::new(format!("replace-{mode}")),
+                    "model",
+                    mode,
+                    base,
+                    None,
+                    &defaults
+                )
+                .await
+                .unwrap(),
+            "只使用中文回答。",
+            "replace must drop the Cursor prompt instead of adding to it"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_disabled_replacement_keeps_the_cursor_original() {
+    use cursor_server::model::{ConversationId, ModelSystemPromptSettings, SystemPromptPosition};
+
+    let (_directory, store) = fixtures::temp_store().await;
+    store
+        .set_model_system_prompt(
+            "model",
+            &ModelSystemPromptSettings {
+                enabled: false,
+                content: "只使用中文回答。".into(),
+                position: SystemPromptPosition::Replace,
+            },
+        )
+        .await
+        .unwrap();
+    let defaults = BTreeMap::from([("agent".into(), "base agent".into())]);
+    assert_eq!(
+        store
+            .conversation_system_prompt(
+                &ConversationId::new("disabled-replace"),
+                "model",
+                "agent",
+                "base agent",
+                None,
+                &defaults
+            )
+            .await
+            .unwrap(),
+        "base agent",
+        "a disabled replacement must not change the Cursor prompt"
+    );
+}
+
+#[tokio::test]
 async fn portable_configuration_round_trips_model_system_prompts() {
     use cursor_server::model::{ModelSystemPromptSettings, SystemPromptPosition};
 
@@ -657,7 +737,7 @@ async fn invalid_prompt_changes_leave_the_saved_configuration_untouched() {
     for invalid in [
         json!({"enabled":true,"content":" \n\t\u{3000}","position":"after"}),
         json!({"enabled":true,"content":"x".repeat(32_769),"position":"after"}),
-        json!({"enabled":true,"content":"valid","position":"replace"}),
+        json!({"enabled":true,"content":"valid","position":"interleave"}),
     ] {
         let mut invalid = invalid;
         invalid["model_id"] = json!(model.model_hash);

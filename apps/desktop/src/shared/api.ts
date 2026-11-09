@@ -106,6 +106,25 @@ export interface LegacyModelImportResult {
   total: number;
 }
 
+export interface MagpieImportModel {
+  model_id: string;
+  display_name: string;
+  provider: string;
+  /** magpie 的路由组(auto/*、group/*):一条 id 背后是多供应商负载均衡,不是单个供应商模型。 */
+  routing_group: boolean;
+  endpoint: "openai-chat" | "openai-responses" | "anthropic";
+  context_window_tokens: number | null;
+  max_completion_tokens: number | null;
+  reasoning_levels: string[];
+  existing: boolean;
+}
+
+export interface MagpieImportPreview {
+  address: string;
+  version: string;
+  models: MagpieImportModel[];
+}
+
 export interface ModelConnectivityResult {
   duration_ms: number;
   first_valid_response_ms: number | null;
@@ -202,7 +221,8 @@ export interface ModelBadgeSettings {
 export interface ModelSystemPromptSettings {
   enabled: boolean;
   content: string;
-  position: "before" | "after";
+  /** 插入到 Cursor 原有提示词之前/之后，或直接替换掉它。 */
+  position: "before" | "after" | "replace";
 }
 
 export type PluginRuntimeState = "uninitialized" | "initializing" | "ready" | "failed" | "unsupported";
@@ -511,10 +531,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   models: () => request<Model[]>("/models"),
   createModels: (models: ModelInput[]) => request<Model[]>("/models", { method: "POST", body: JSON.stringify({ models }) }),
-  reorderModels: (modelHashes: string[]) => request<Model[]>("/models/order", { method: "PUT", body: JSON.stringify({ model_hashes: modelHashes }) }),
   discoverModels: (input: ModelDiscoveryInput) => request<{ models: string[] }>("/models/discover", { method: "POST", body: JSON.stringify(input) }),
   previewV0049Models: () => request<LegacyModelImportPreview>("/models/import-v0049"),
   importV0049Models: () => request<LegacyModelImportResult>("/models/import-v0049", { method: "POST" }),
+  previewMagpieModels: (address?: string) => request<MagpieImportPreview>(`/magpie${address ? `?address=${encodeURIComponent(address)}` : ""}`),
+  importMagpieModels: (modelIds: string[], address?: string) => request<LegacyModelImportResult>("/magpie/import", { method: "POST", body: JSON.stringify({ model_ids: modelIds, address }) }),
   updateModel: (hash: string, model: ModelInput) => request<Model>(`/models/${hash}`, { method: "PUT", body: JSON.stringify(model) }),
   deleteModel: (hash: string) => request<void>(`/models/${hash}`, { method: "DELETE" }),
   modelSystemPrompt: (modelId: string) => request<ModelSystemPromptSettings>(`/model-system-prompts?model_id=${encodeURIComponent(modelId)}`),
