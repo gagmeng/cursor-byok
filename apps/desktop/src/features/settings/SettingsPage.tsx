@@ -22,7 +22,7 @@ import { themeOptions } from "../../shared/theme/theme";
 import styles from "./SettingsPage.module.scss";
 
 export function SettingsPage() {
-  const { detailed, ports, theme } = useAppStore();
+  const { detailed, ports, theme, models } = useAppStore();
   const { preference, locale } = useI18n();
   const message = useMessage();
   const [proxyPort, setProxyPort] = useState(String(ports.proxy_port));
@@ -41,9 +41,12 @@ export function SettingsPage() {
   const [tabDraft, setTabDraft] = useState<TabSettings>({ mode: "public", address: "" });
   const [editingTab, setEditingTab] = useState(false);
   const [savingTab, setSavingTab] = useState(false);
+  const [autoReviewModel, setAutoReviewModel] = useState<string | null>(null);
+  const [savingAutoReview, setSavingAutoReview] = useState(false);
   useEffect(() => {
     const report = (cause: unknown) => message(cause instanceof Error ? cause.message : String(cause));
     void api.statisticsStorage().then(setStorage).catch(report);
+    void api.autoReviewModel().then(setAutoReviewModel).catch(report);
     void api.proxySettings().then((next) => {
       setOutboundProxy(next);
       setProxyDraft({ mode: next.mode, address: next.address, auth_enabled: next.auth_enabled, username: next.username, password: "" });
@@ -265,6 +268,27 @@ export function SettingsPage() {
           </div>
         </div>
       </TitledCard>
+      <TitledCard title={t("Auto-review 审核模型")}>
+        <div className={styles.themeActions}>
+          <Select
+            ariaLabel={t("Auto-review 审核模型")}
+            value={autoReviewModel ?? ""}
+            disabled={savingAutoReview}
+            options={[
+              { value: "", label: t("跟随运行模型（默认）") },
+              ...models.map((model) => ({ value: model.model_hash, label: model.display_name })),
+            ]}
+            onChange={(value) => {
+              setSavingAutoReview(true);
+              api.setAutoReviewModel(value === "" ? null : value)
+                .then((saved) => { setAutoReviewModel(saved); message(t("已保存")); })
+                .catch((cause) => message(cause instanceof Error ? cause.message : String(cause)))
+                .finally(() => setSavingAutoReview(false));
+            }}
+          />
+          <small>{t("Auto-review 开启时由该模型审核 Shell、WebFetch 与 MCP 调用；留空跟随每次运行所用的模型。")}</small>
+        </div>
+      </TitledCard>
       <TitledCard title={t("主题")}>
         <div className={styles.themeActions}>
           {themeOptions.map(({ id }) => (
@@ -273,7 +297,7 @@ export function SettingsPage() {
               key={id}
               onClick={() => appStore.selectTheme(id)}
             >
-              {id === "default-dark" ? t("默认暗色") : t("默认亮色")}
+              {id === "default-dark" ? t("默认暗色") : id === "default-light" ? t("默认亮色") : t("跟随系统")}
             </button>
           ))}
         </div>

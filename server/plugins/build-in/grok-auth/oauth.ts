@@ -132,6 +132,34 @@ async function poll(sessionValue: JsonValue, context: PluginContext): Promise<OA
   }
 }
 
+/** 用 refresh_token 换新 access_token;无效授权返回 null(需重新登录)。 */
+export async function renewAccessToken(
+  refreshToken: string,
+  context: PluginContext,
+): Promise<{ accessToken: string; refreshToken: string | null } | null> {
+  const response = await context.network.fetch(TOKEN_URL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: CLIENT_ID,
+      refresh_token: refreshToken,
+    }).toString(),
+  });
+  const body = parseBody(response.body);
+  if (response.status < 200 || response.status >= 300) {
+    const code = text(body.error) ?? "";
+    if (code === "invalid_grant" || code === "invalid_client") return null;
+    throw new Error(`Failed to renew xAI access token (HTTP ${response.status}): ${response.body}`);
+  }
+  const accessToken = text(body.access_token);
+  if (!accessToken) throw new Error("xAI token response is missing access_token");
+  return { accessToken, refreshToken: text(body.refresh_token) ?? refreshToken };
+}
+
 export const grokDeviceOAuth: OAuth2AddMethod = {
   type: "oauth2.0",
   id: "xai-device",

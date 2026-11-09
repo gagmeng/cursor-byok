@@ -14,6 +14,7 @@ const CURSOR_TAKEOVER_ENABLED_KEY: &str = "cursor_takeover_enabled";
 const PRICING_SETTINGS_KEY: &str = "token_pricing";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
 const MODEL_BADGES_SETTINGS_KEY: &str = "model_badges";
+const AUTO_REVIEW_MODEL_KEY: &str = "auto_review_model";
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -510,6 +511,32 @@ impl Store {
         .execute(&self.pool)
         .await?;
         Ok(settings)
+    }
+
+    /// Auto-review 审官模型;None 表示跟随 Run 自己的模型。
+    pub async fn auto_review_model(&self) -> Result<Option<String>> {
+        let value = sqlx::query_scalar::<_, String>(
+            "SELECT value_json FROM service_settings WHERE setting_key = ?",
+        )
+        .bind(AUTO_REVIEW_MODEL_KEY)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(value
+            .map(|value| serde_json::from_str::<String>(&value).map_err(crate::Error::from))
+            .transpose()?
+            .filter(|model| !model.trim().is_empty()))
+    }
+
+    pub async fn set_auto_review_model(&self, model: Option<String>) -> Result<()> {
+        let value_json = serde_json::to_string(&model.unwrap_or_default())?;
+        let _write = self.writes.lock().await;
+        sqlx::query("INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms")
+            .bind(AUTO_REVIEW_MODEL_KEY)
+            .bind(value_json)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn model_badge_settings(&self) -> Result<ModelBadgeSettings> {

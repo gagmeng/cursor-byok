@@ -248,18 +248,28 @@ impl RunEngine {
             } else {
                 super::history::user_terminated(history, CONTINUE_MESSAGE_ID, CONTINUE_INSTRUCTION)
             };
-            let request = crate::model::ModelRequest {
+            let mut request = crate::model::ModelRequest {
                 prompt: prepared.prompt.clone(),
                 model: prepared.model.clone(),
                 history,
             };
             let mut retries = 0_u32;
+            // U5 failover: a chain of fallback models tried before same-model retries,
+            // only while nothing has streamed for the turn.
+            let mut failover_visited =
+                std::collections::HashSet::from([prepared.model.model_id.clone()]);
+            let mut failover_left = 4_u32;
+            let mut failover_hops = 0_u32;
             let mut pending_insertions = Vec::new();
             let cycle = 'attempt: loop {
-                let call_id = if retries == 0 {
-                    format!("{}:{provider_call_index}", prepared.run_id)
-                } else {
-                    format!("{}:{provider_call_index}:retry-{retries}", prepared.run_id)
+                let call_id = match (retries, failover_hops) {
+                    (0, 0) => format!("{}:{provider_call_index}", prepared.run_id),
+                    (0, hops) => {
+                        format!("{}:{provider_call_index}:failover-{hops}", prepared.run_id)
+                    }
+                    (retries, _) => {
+                        format!("{}:{provider_call_index}:retry-{retries}", prepared.run_id)
+                    }
                 };
                 let invocation = crate::model::ModelInvocation {
                     call_id,
@@ -434,6 +444,57 @@ impl RunEngine {
                                     continue 'model;
                                 }
                                 Err(outcome) => return (outcome, usage),
+                            }
+                        }
+                        // Nothing streamed yet and the model declares a fallback:
+                        // switch to it instead of retrying the same broken target.
+                        if cycle_failure.partial_text.is_empty()
+                            && cycle_failure.partial_reasoning.is_empty()
+                            && cycle_failure.retryable
+                            && failover_left > 0
+                        {
+                            let current = request.model.model_id.clone();
+                            let fallback = match self.store.model(&current).await {
+                                Ok(Some(config)) => config.fallback_model_hash.clone(),
+                                Ok(None) => None,
+                                Err(error) => return (RunOutcome::Failed(error.into()), usage),
+                            };
+                            let fallback = fallback.filter(|hash| !failover_visited.contains(hash));
+                            if let Some(fallback) = fallback {
+                                let display = self
+                                    .store
+                                    .model(&fallback)
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .map(|config| config.display_name)
+                                    .unwrap_or_else(|| fallback.clone());
+                                failover_visited.insert(fallback.clone());
+                                failover_left -= 1;
+                                failover_hops += 1;
+                                retries = 0;
+                                request.model.model_id = fallback.clone();
+                                request.model.display_name = Some(display.clone());
+                                let message = format!("failover to {display}");
+                                tracing::warn!(
+                                    provider_call_index,
+                                    checkpoint_id = checkpoint.0,
+                                    %fallback,
+                                    "model failed before output; failing over"
+                                );
+                                if emit(
+                                    client,
+                                    RunEvent::ModelAttemptFailed {
+                                        attempt: 0,
+                                        message: message.clone(),
+                                    },
+                                )
+                                .await
+                                .is_err()
+                                {
+                                    return (client_failure(), usage);
+                                }
+                                continue 'attempt;
                             }
                         }
                         if !should_retry(&cycle_failure, retries) {

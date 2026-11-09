@@ -73,6 +73,7 @@ pub async fn import(
 impl From<&ModelConfig> for ModelConfigInput {
     fn from(model: &ModelConfig) -> Self {
         ModelConfigInput {
+            fallback_model_hash: None,
             sort_order: model.sort_order,
             display_name: model.display_name.clone(),
             group_name: model.group_name.clone(),
@@ -105,6 +106,7 @@ mod tests {
 
     fn model() -> ModelConfig {
         ModelConfig {
+            fallback_model_hash: None,
             model_hash: "hash".into(),
             sort_order: 3,
             display_name: "glm-5.3-官方".into(),

@@ -819,6 +819,7 @@ mod tests {
 
     fn model() -> ModelConfig {
         ModelConfig {
+            fallback_model_hash: None,
             model_hash: "local-model-hash".into(),
             sort_order: 0,
             display_name: "Local Model".into(),

@@ -836,6 +836,14 @@ impl ControlService {
         self.store.set_commit_settings(settings).await
     }
 
+    pub async fn auto_review_model(&self) -> Result<Option<String>> {
+        self.store.auto_review_model().await
+    }
+
+    pub async fn set_auto_review_model(&self, model: Option<String>) -> Result<()> {
+        self.store.set_auto_review_model(model).await
+    }
+
     pub async fn model_badge_settings(&self) -> Result<ModelBadgeSettings> {
         self.store.model_badge_settings().await
     }

@@ -90,6 +90,9 @@ pub struct ModelConfigInput {
     /// 供应商分组的自定义显示名;同一 base_url 主机下的模型共享。
     #[serde(default)]
     pub group_name: Option<String>,
+    /// 本模型失败(未产出任何输出)时转移到该模型;None 表示不转移。
+    #[serde(default)]
+    pub fallback_model_hash: Option<String>,
     #[serde(rename = "type")]
     pub model_type: ModelType,
     pub base_url: String,
@@ -128,6 +131,7 @@ pub struct ModelConfig {
     pub sort_order: i64,
     pub display_name: String,
     pub group_name: Option<String>,
+    pub fallback_model_hash: Option<String>,
     #[serde(rename = "type")]
     pub model_type: ModelType,
     pub base_url: String,
@@ -214,6 +218,13 @@ pub fn normalize_model_input(input: &ModelConfigInput) -> Result<ModelConfigInpu
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(String::from);
+    let fallback_model_hash = input
+        .fallback_model_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(String::from);
+
     let base_url = normalize_request_url(&input.base_url)?;
     let api_key = required(&input.api_key, "model API key")?;
     let tooltip_data = required(&input.tooltip_data, "model tooltip")?;
@@ -241,6 +252,7 @@ pub fn normalize_model_input(input: &ModelConfigInput) -> Result<ModelConfigInpu
         sort_order: input.sort_order.max(0),
         display_name,
         group_name,
+        fallback_model_hash,
         model_type: input.model_type,
         base_url,
         use_full_url: input.use_full_url,

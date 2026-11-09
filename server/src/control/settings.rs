@@ -161,6 +161,20 @@ pub async fn update_pricing_settings(
     Ok(Json(service.set_pricing_settings(settings).await?))
 }
 
+pub async fn get_auto_review_model(
+    State(service): State<ControlService>,
+) -> Result<Json<Option<String>>> {
+    Ok(Json(service.auto_review_model().await?))
+}
+
+pub async fn update_auto_review_model(
+    State(service): State<ControlService>,
+    Json(model): Json<Option<String>>,
+) -> Result<Json<Option<String>>> {
+    service.set_auto_review_model(model).await?;
+    Ok(Json(service.auto_review_model().await?))
+}
+
 pub async fn get_model_badges(
     State(service): State<ControlService>,
 ) -> Result<Json<ModelBadgeSettings>> {

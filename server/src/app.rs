@@ -28,6 +28,74 @@ pub struct App {
     store: Store,
 }
 
+/// Writes the one-file migration bundle into <data>/backups every day and
+/// keeps the newest seven, so a broken database or a bad import never costs
+/// the user their model configuration.
+fn spawn_daily_config_backup(control: crate::control::ControlService) {
+    tokio::spawn(async move {
+        let backup_root = match crate::config::managed_data_dir() {
+            Ok(dir) => dir.join("backups"),
+            Err(error) => {
+                tracing::warn!(%error, "config backup directory unavailable");
+                return;
+            }
+        };
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        interval.tick().await; // first tick fires immediately: a fresh session secures one backup
+        loop {
+            interval.tick().await;
+            match write_config_backup(&control, &backup_root).await {
+                Ok(path) => tracing::info!(path = %path.display(), "daily config backup written"),
+                Err(error) => tracing::warn!(%error, "daily config backup failed"),
+            }
+        }
+    });
+}
+
+async fn write_config_backup(
+    control: &crate::control::ControlService,
+    backup_root: &std::path::Path,
+) -> crate::Result<std::path::PathBuf> {
+    tokio::fs::create_dir_all(backup_root).await?;
+    let bundle = control.migration_export().await?;
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let path = backup_root.join(format!("cursor-byok-backup-{stamp}.json"));
+    tokio::fs::write(&path, serde_json::to_vec_pretty(&bundle)?).await?;
+    let mut names = Vec::new();
+    let mut entries = tokio::fs::read_dir(backup_root).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("cursor-byok-backup-")
+        {
+            names.push(entry.file_name());
+        }
+    }
+    names.sort();
+    while names.len() > 7 {
+        let oldest = names.remove(0);
+        tokio::fs::remove_file(backup_root.join(oldest)).await?;
+    }
+    Ok(path)
+}
+
+/// Long-running sessions keep growing the database between restarts; rerun
+/// the startup maintenance hourly instead of only at process start.
+fn spawn_periodic_maintenance(store: crate::store::Store) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            if let Err(error) = store.prune_dead_lineages().await {
+                tracing::warn!(%error, "periodic lineage prune skipped");
+            }
+        }
+    });
+}
+
 impl App {
     pub async fn new(mut config: Config) -> Result<Self> {
         let store = Store::connect(&config.database_url).await?;
@@ -36,6 +104,7 @@ impl App {
         if let Err(error) = store.prune_dead_lineages().await {
             tracing::warn!(%error, "startup lineage prune skipped");
         }
+        spawn_periodic_maintenance(store.clone());
         if config.use_persisted_ports {
             config
                 .listen_addr
@@ -84,6 +153,7 @@ impl App {
             clients.clone(),
             config.app_version.clone(),
         )?;
+        spawn_daily_config_backup(control.clone());
         let harness = control.cursor_harness().clone();
         let mut router = api::router(registry.clone(), clients)?.merge(byok);
         router = match &config.console {

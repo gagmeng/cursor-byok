@@ -74,8 +74,13 @@ impl PromptAssets {
     pub fn load(root: &Path) -> Result<Self> {
         Self::read(|path| {
             let path = root.join(path);
+            // Windows 检出可能把模板落成 CRLF;模板 token 与测试断言一律按 LF 匹配。
             path.exists()
-                .then(|| std::fs::read_to_string(path).map_err(Error::from))
+                .then(|| {
+                    std::fs::read_to_string(path)
+                        .map(|content| content.replace("\r\n", "\n"))
+                        .map_err(Error::from)
+                })
                 .transpose()
         })
     }

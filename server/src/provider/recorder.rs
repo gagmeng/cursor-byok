@@ -391,6 +391,7 @@ mod tests {
         .unwrap();
         let model = store
             .create_model(&ModelConfigInput {
+                fallback_model_hash: None,
                 sort_order: 0,
                 display_name: "Test Model".into(),
                 group_name: None,

@@ -8,6 +8,7 @@ export interface Model {
   sort_order: number;
   display_name: string;
   group_name: string | null;
+  fallback_model_hash: string | null;
   type: ModelType;
   base_url: string;
   use_full_url: boolean;
@@ -35,6 +36,7 @@ export interface ModelInput {
   sort_order: number;
   display_name: string;
   group_name: string | null;
+  fallback_model_hash: string | null;
   type: ModelType;
   base_url: string;
   use_full_url: boolean;
@@ -585,6 +587,8 @@ export const api = {
   setCommitSettings: (settings: CommitSettings) => request<CommitSettingsView>("/settings/commit", { method: "PUT", body: JSON.stringify(settings) }),
   pricingSettings: () => request<TokenPricingSettings>("/settings/pricing"),
   setPricingSettings: (settings: TokenPricingSettings) => request<TokenPricingSettings>("/settings/pricing", { method: "PUT", body: JSON.stringify(settings) }),
+  autoReviewModel: () => request<string | null>("/settings/auto-review-model"),
+  setAutoReviewModel: (model: string | null) => request<string | null>("/settings/auto-review-model", { method: "PUT", body: JSON.stringify(model) }),
   modelBadgeSettings: () => request<ModelBadgeSettings>("/settings/model-badges"),
   setModelBadgeSettings: (settings: ModelBadgeSettings) => request<ModelBadgeSettings>("/settings/model-badges", { method: "PUT", body: JSON.stringify(settings) }),
 };

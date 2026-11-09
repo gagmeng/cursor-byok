@@ -4,10 +4,11 @@ import type {
   ProviderResult,
   ProviderSupport,
 } from "cursor-byok:provider";
-import type { PluginContext } from "cursor-byok:plugin";
+import type { JsonValue, PluginContext } from "cursor-byok:plugin";
 import { HttpError, streamOpenAiChat } from "cursor-byok:protocol/openai-chat";
 import { grokModels } from "./models.ts";
 import { type AccountData, accountData, quotaExhaustedPatch, RESOURCE_TYPE } from "./resources.ts";
+import { renewAccessToken } from "./oauth.ts";
 
 const CHAT_URL = "https://api.x.ai/v1/chat/completions";
 
@@ -44,6 +45,48 @@ function invalidResult(message: string, stateMessage: string): ProviderResult {
   };
 }
 
+async function streamGrok(
+  input: ProviderInvokeInput,
+  output: ProviderOutput,
+  context: PluginContext,
+  accessToken: string,
+): Promise<void> {
+  await streamOpenAiChat(
+    {
+      url: CHAT_URL,
+      model: input.model.id,
+      // xAI 不接受 reasoning_effort 与 service_tier;思考由模型自身决定。
+      request: {
+        ...input.request,
+        reasoning: { enabled: false, effort: null },
+        latency: "standard",
+      },
+      headers: { authorization: `Bearer ${accessToken}` },
+    },
+    output,
+    context,
+  );
+}
+
+/** 把 HttpError 归类成 provider 结果;额度类附带冷却 patch。 */
+function httpOutcome(error: HttpError, data: AccountData): ProviderResult {
+  if ((error.status === 401 || error.status === 403) && !isQuotaHttpError(error)) {
+    return invalidResult(error.message, "Grok authorization expired; sign in again");
+  }
+  if (isQuotaHttpError(error)) {
+    return {
+      status: "resource-error",
+      message: error.message,
+      patch: quotaExhaustedPatch(data),
+    };
+  }
+  return { status: "request-error", message: error.message };
+}
+
+function requestErrorResult(message: string): ProviderResult {
+  return { status: "request-error", message };
+}
+
 async function invoke(
   input: ProviderInvokeInput,
   output: ProviderOutput,
@@ -60,41 +103,52 @@ async function invoke(
     return invalidResult(message, message);
   }
   try {
-    await streamOpenAiChat(
-      {
-        url: CHAT_URL,
-        model: input.model.id,
-        // xAI 不接受 reasoning_effort 与 service_tier;思考由模型自身决定。
-        request: {
-          ...input.request,
-          reasoning: { enabled: false, effort: null },
-          latency: "standard",
-        },
-        headers: { authorization: `Bearer ${data.accessToken}` },
-      },
-      output,
-      context,
-    );
+    await streamGrok(input, output, context, data.accessToken);
     return { status: "completed" };
   } catch (error) {
-    if (error instanceof HttpError) {
-      if ((error.status === 401 || error.status === 403) && !isQuotaHttpError(error)) {
+    if (!(error instanceof HttpError)) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isQuotaError(message)) {
+        return { status: "resource-error", message, patch: quotaExhaustedPatch(data) };
+      }
+      return requestErrorResult(message);
+    }
+    // 401/403 且还有 refresh_token:静默续期一次再试;新凭据经 patch 持久化。
+    if (
+      (error.status === 401 || error.status === 403) &&
+      !isQuotaHttpError(error) &&
+      data.refreshToken
+    ) {
+      let renewed: { accessToken: string; refreshToken: string | null } | null;
+      try {
+        renewed = await renewAccessToken(data.refreshToken, context);
+      } catch (renewError) {
+        return requestErrorResult(
+          renewError instanceof Error ? renewError.message : String(renewError),
+        );
+      }
+      if (!renewed) {
         return invalidResult(error.message, "Grok authorization expired; sign in again");
       }
-      if (isQuotaHttpError(error)) {
+      const next: AccountData = { ...data, accessToken: renewed.accessToken, refreshToken: renewed.refreshToken };
+      try {
+        await streamGrok(input, output, context, next.accessToken);
         return {
-          status: "resource-error",
-          message: error.message,
-          patch: quotaExhaustedPatch(data),
+          status: "completed",
+          patch: { privateData: next as unknown as JsonValue },
         };
+      } catch (retryError) {
+        if (retryError instanceof HttpError) {
+          return httpOutcome(retryError, next);
+        }
+        const message = retryError instanceof Error ? retryError.message : String(retryError);
+        if (isQuotaError(message)) {
+          return { status: "resource-error", message, patch: quotaExhaustedPatch(next) };
+        }
+        return requestErrorResult(message);
       }
-      return { status: "request-error", message: error.message };
     }
-    const message = error instanceof Error ? error.message : String(error);
-    if (isQuotaError(message)) {
-      return { status: "resource-error", message, patch: quotaExhaustedPatch(data) };
-    }
-    return { status: "request-error", message };
+    return httpOutcome(error, data);
   }
 }
 

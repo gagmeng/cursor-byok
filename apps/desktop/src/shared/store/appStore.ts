@@ -283,6 +283,13 @@ export const appStore = {
   },
 };
 
+// "system" 档位跟随操作系统深浅色切换;其余档位不受影响。
+window
+  .matchMedia("(prefers-color-scheme: light)")
+  .addEventListener("change", () => {
+    if (snapshot.theme === "system") applyTheme("system");
+  });
+
 export function useAppStore() {
   return useSyncExternalStore(appStore.subscribe, appStore.getSnapshot);
 }

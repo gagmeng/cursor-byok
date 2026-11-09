@@ -29,6 +29,7 @@ use tower::ServiceExt;
 
 fn model_input() -> ModelConfigInput {
     ModelConfigInput {
+        fallback_model_hash: None,
         sort_order: 0,
         display_name: "Example".into(),
         group_name: Some("work".into()),

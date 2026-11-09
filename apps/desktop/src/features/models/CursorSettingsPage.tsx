@@ -402,7 +402,7 @@ export function CursorSettingsPage() {
             <TooltipTrigger label={t("显示设置")}>
               <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-label={t("显示设置")} disabled={cursorBusy} onClick={openBadgeSettings}><Icon icon={displaySettingsIcon} size="1.1em" /></button>
             </TooltipTrigger>
-            <TooltipTrigger label={batchTestLabel}>
+            <TooltipTrigger label={`${batchTestLabel}（${t("仅验证连通性，不包含工具调用轮次的兼容性")}）`}>
               <button type="button" className={`${controls.iconButton} ${styles.groupCommand}`} aria-label={batchTestLabel} disabled={cursorBusy || (!batchTesting && testingModelHashes.size > 0)} onClick={() => void (batchTesting ? cancelAllModelTests() : testAllModels())}><Icon icon={batchTesting ? stopIcon : flaskIcon} size="1.1em" /></button>
             </TooltipTrigger>
           </>}
@@ -430,7 +430,7 @@ export function CursorSettingsPage() {
     </ConfirmDialog>
     <Modal fullHeight open={draft !== null} title={editing ? t("编辑模型") : t("添加模型")} banner={draft && (editorTesting || editorTestState) ? <CursorModelTestResult state={editorTestState} testing={editorTesting} /> : undefined} busy={cursorBusy || savingAndTesting} onClose={() => { if (editing && editorTesting) void cancelModelTest(editing.model_hash); setDraft(null); setEditing(null); }} onSubmit={() => void save()} submitLabel={t("保存")} secondaryAction={<button type="button" className={controls.secondary} disabled={cursorBusy || savingAndTesting} onClick={() => void (editorTesting && editing ? cancelModelTest(editing.model_hash) : saveAndTest())}>{savingAndTesting ? t("处理中…") : editorTesting ? t("取消测试") : t("保存并测试")}</button>}>
       {draft && <>
-        <CursorModelEditor draft={draft} modelOptions={modelOptions} discovering={discovering} zcodePluginReady={isZcodePluginReady(plugins)} onChange={setDraft} onDiscover={discover} />
+        <CursorModelEditor draft={draft} modelOptions={modelOptions} discovering={discovering} zcodePluginReady={isZcodePluginReady(plugins)} editingHash={editing?.model_hash ?? null} onChange={setDraft} onDiscover={discover} />
       </>}
     </Modal>
     <ConfirmDialog open={caCommand !== null} title={t("安装本地 CA")} cancelLabel={t("关闭")} confirmLabel={t("打开终端")} onCancel={() => setCaCommand(null)} onConfirm={openCaTerminal}>

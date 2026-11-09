@@ -223,6 +223,10 @@ pub fn api_router(service: ControlService) -> Router {
             get(settings::get_pricing_settings).put(settings::update_pricing_settings),
         )
         .route(
+            "/__byok-api__/api/settings/auto-review-model",
+            get(settings::get_auto_review_model).put(settings::update_auto_review_model),
+        )
+        .route(
             "/__byok-api__/api/settings/model-badges",
             get(settings::get_model_badges).put(settings::update_model_badges),
         )

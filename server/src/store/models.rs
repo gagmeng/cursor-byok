@@ -11,7 +11,7 @@ use crate::{
 use super::{now_ms, Store};
 
 const MODEL_COLUMNS: &str = r#"
-    model_hash, sort_order, display_name, group_name, model_type, base_url, use_full_url, api_key, tooltip_data,
+    model_hash, sort_order, display_name, group_name, fallback_model_hash, model_type, base_url, use_full_url, api_key, tooltip_data,
     model_id, reasoning_effort, openai_endpoint, openai_extra_params_enabled,
     openai_extra_params_json, custom_headers_enabled, custom_headers_json,
     anthropic_extra_params_enabled, anthropic_extra_params_json, context_window_tokens,
@@ -122,7 +122,7 @@ impl Store {
         }
         let result = sqlx::query(
             r#"UPDATE model_configs SET
-                model_hash = ?, sort_order = ?, display_name = ?, group_name = ?, model_type = ?, base_url = ?,
+                model_hash = ?, sort_order = ?, display_name = ?, group_name = ?, fallback_model_hash = ?, model_type = ?, base_url = ?,
                 use_full_url = ?, api_key = ?, tooltip_data = ?, model_id = ?, reasoning_effort = ?,
                 openai_endpoint = ?, openai_extra_params_enabled = ?, openai_extra_params_json = ?,
                 custom_headers_enabled = ?, custom_headers_json = ?,
@@ -135,6 +135,7 @@ impl Store {
         .bind(input.sort_order)
         .bind(&input.display_name)
         .bind(&input.group_name)
+        .bind(&input.fallback_model_hash)
         .bind(input.model_type.as_str())
         .bind(&input.base_url)
         .bind(input.use_full_url)
@@ -247,13 +248,13 @@ async fn insert_model_with_conflict(
 ) -> Result<bool> {
     let mut statement = String::from(
         r#"INSERT INTO model_configs(
-            model_hash, sort_order, display_name, group_name, model_type, base_url, use_full_url, api_key, tooltip_data,
+            model_hash, sort_order, display_name, group_name, fallback_model_hash, model_type, base_url, use_full_url, api_key, tooltip_data,
             model_id, reasoning_effort, openai_endpoint, openai_extra_params_enabled,
             openai_extra_params_json, custom_headers_enabled, custom_headers_json,
             anthropic_extra_params_enabled, anthropic_extra_params_json, context_window_tokens,
             max_completion_tokens, anthropic_max_tokens, anthropic_thinking_effort,
             thinking_budget_tokens, created_at_ms, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     );
     if ignore_existing {
         statement.push_str(" ON CONFLICT(model_hash) DO NOTHING");
@@ -263,6 +264,7 @@ async fn insert_model_with_conflict(
         .bind(input.sort_order)
         .bind(&input.display_name)
         .bind(&input.group_name)
+        .bind(&input.fallback_model_hash)
         .bind(input.model_type.as_str())
         .bind(&input.base_url)
         .bind(input.use_full_url)
@@ -291,6 +293,7 @@ async fn insert_model_with_conflict(
 
 fn model_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ModelConfig> {
     Ok(ModelConfig {
+        fallback_model_hash: row.try_get("fallback_model_hash")?,
         model_hash: row.try_get("model_hash")?,
         sort_order: row.try_get("sort_order")?,
         display_name: row.try_get("display_name")?,
@@ -345,6 +348,7 @@ mod tests {
 
     fn model_input(group_name: Option<&str>) -> ModelConfigInput {
         ModelConfigInput {
+            fallback_model_hash: None,
             sort_order: 0,
             display_name: "Test Model".into(),
             group_name: group_name.map(String::from),

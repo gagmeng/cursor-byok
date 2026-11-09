@@ -220,6 +220,7 @@ function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/re
     sort_order: order,
     display_name: name,
     group_name: null,
+    fallback_model_hash: null,
     type,
     base_url: url,
     use_full_url: false,

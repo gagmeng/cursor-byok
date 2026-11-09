@@ -340,8 +340,23 @@ pub(crate) async fn prepare(
         };
         RunAction::Resume { pending_tool_round }
     };
-    let auto_review =
+    let mut auto_review =
         auto_review_states.resolve(conversation_id.as_str(), &request_context, &model.model_id);
+    // 审官模型可配置:设置指向已配置模型时覆盖 Run 模型;配置失效则回落。
+    if let Some(review) = auto_review.as_mut() {
+        if let Some(configured) = store.auto_review_model().await? {
+            if store
+                .models()
+                .await?
+                .iter()
+                .any(|m| m.model_hash == configured)
+            {
+                review.model_id = configured;
+            } else {
+                tracing::warn!(model = %configured, "auto-review model setting is gone; using the run model");
+            }
+        }
+    }
     let exec = exec_context(
         request,
         &request_context,
