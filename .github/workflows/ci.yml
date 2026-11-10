@@ -64,6 +64,18 @@ jobs:
         working-directory: apps/desktop
         run: npm run check
 
+      - name: Check frontend behavior
+        working-directory: apps/desktop
+        run: npm test
+
+      - name: Install browser test runtime
+        working-directory: apps/desktop
+        run: npx playwright install --with-deps chromium
+
+      - name: Check isolated desktop interactions
+        working-directory: apps/desktop
+        run: npm run test:ui
+
       - name: Check release workflow scripts
         run: node --test .github/scripts/*.test.mjs
 
@@ -89,3 +101,18 @@ jobs:
 
       - name: Run platform Clippy
         run: cargo clippy --package cursor-byok-desktop --all-targets -- -D warnings
+
+  plugins:
+    name: Built-in plugins
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run plugin behavior tests
+        shell: bash
+        run: |
+          for plugin in server/plugins/build-in/*; do
+            (cd "$plugin" && deno test --allow-all)
+          done

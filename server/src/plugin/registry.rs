@@ -738,6 +738,27 @@ impl PluginRegistry {
         resource_type: &str,
         files: serde_json::Value,
     ) -> Result<ImportResponse> {
+        self.import_resource_files(plugin_id, resource_type, files, false)
+            .await
+    }
+
+    pub async fn import_missing_resources(
+        &self,
+        plugin_id: &str,
+        resource_type: &str,
+        files: serde_json::Value,
+    ) -> Result<ImportResponse> {
+        self.import_resource_files(plugin_id, resource_type, files, true)
+            .await
+    }
+
+    async fn import_resource_files(
+        &self,
+        plugin_id: &str,
+        resource_type: &str,
+        files: serde_json::Value,
+        keep_existing: bool,
+    ) -> Result<ImportResponse> {
         let executable = self.executable()?;
         let entry = self.find_entry(&executable, plugin_id).await?;
         let resource = find_resource(&entry, resource_type)?;
@@ -770,11 +791,17 @@ impl PluginRegistry {
                 "import produced more than {MAX_IMPORT_DRAFTS} resources"
             )));
         }
-        let outcome = self
-            .inner
-            .state
-            .upsert_resources(plugin_id, resource_type, parsed.resources)
-            .await?;
+        let outcome = if keep_existing {
+            self.inner
+                .state
+                .import_missing_resources(plugin_id, resource_type, parsed.resources)
+                .await?
+        } else {
+            self.inner
+                .state
+                .upsert_resources(plugin_id, resource_type, parsed.resources)
+                .await?
+        };
         let model_sync_error = self
             .sync_provider_models_for_resource(&entry, &executable, resource_type)
             .await;

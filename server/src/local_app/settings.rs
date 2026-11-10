@@ -1,6 +1,7 @@
 //! Integrates local application settings.
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{Error, Result};
@@ -61,9 +62,64 @@ fn write(settings: &BTreeMap<String, Value>) -> Result<()> {
     Ok(())
 }
 
+#[derive(Default, Serialize, Deserialize)]
+struct SettingsOwnership {
+    original: BTreeMap<String, Option<Value>>,
+    applied: BTreeMap<String, Option<Value>>,
+}
+
+impl SettingsOwnership {
+    fn apply(&mut self, settings: &mut BTreeMap<String, Value>, proxy_url: &str) {
+        for key in KEYS.into_iter().chain([NO_PROXY_KEY]) {
+            if self.original.contains_key(key)
+                && settings.get(key) != self.applied.get(key).and_then(Option::as_ref)
+            {
+                self.original.insert(key.into(), settings.get(key).cloned());
+            }
+            self.original
+                .entry(key.into())
+                .or_insert_with(|| settings.get(key).cloned());
+        }
+        apply_proxy_settings(settings, proxy_url);
+        self.applied = self
+            .original
+            .keys()
+            .map(|key| (key.clone(), settings.get(key).cloned()))
+            .collect();
+    }
+
+    fn restore(self, settings: &mut BTreeMap<String, Value>) {
+        for (key, original) in self.original {
+            if settings.get(&key) != self.applied.get(&key).and_then(Option::as_ref) {
+                continue;
+            }
+            if let Some(value) = original {
+                settings.insert(key, value);
+            } else {
+                settings.remove(&key);
+            }
+        }
+    }
+}
+
+fn ownership_path() -> Result<PathBuf> {
+    Ok(crate::config::managed_data_dir()?.join("cursor-settings-ownership.json"))
+}
+
 pub fn write_proxy_settings(proxy_url: &str) -> Result<()> {
     let mut settings = read()?;
-    apply_proxy_settings(&mut settings, proxy_url);
+    let journal = ownership_path()?;
+    let mut ownership: SettingsOwnership = match fs::read(&journal) {
+        Ok(data) => serde_json::from_slice(&data)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Default::default(),
+        Err(error) => return Err(error.into()),
+    };
+    ownership.apply(&mut settings, proxy_url);
+    let temp = journal.with_extension("tmp");
+    fs::write(&temp, serde_json::to_vec(&ownership)?)?;
+    fs::OpenOptions::new().write(true).open(&temp)?.sync_all()?;
+    fs::rename(&temp, &journal)?;
+    // Persist ownership before touching Cursor so a crash can still restore it.
     write(&settings)
 }
 
@@ -80,19 +136,20 @@ fn apply_proxy_settings(settings: &mut BTreeMap<String, Value>, proxy_url: &str)
 }
 
 pub fn clear_proxy_settings() -> Result<()> {
+    let journal = ownership_path()?;
+    let ownership: SettingsOwnership = match fs::read(&journal) {
+        Ok(data) => serde_json::from_slice(&data)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
     let mut settings = read()?;
-    if remove_proxy_settings(&mut settings) {
+    let before = settings.clone();
+    ownership.restore(&mut settings);
+    if settings != before {
         write(&settings)?;
     }
+    fs::remove_file(journal)?;
     Ok(())
-}
-
-fn remove_proxy_settings(settings: &mut BTreeMap<String, Value>) -> bool {
-    let before = settings.len();
-    for key in KEYS {
-        settings.remove(key);
-    }
-    settings.len() != before
 }
 
 pub fn settings_match(proxy_url: &str) -> Result<bool> {
@@ -108,24 +165,6 @@ fn proxy_settings_match(settings: &BTreeMap<String, Value>, proxy_url: &str) -> 
         && settings.get(KEYS[5]) == Some(&Value::String(REMOTE_INFERENCE_ROUTE.into()))
 }
 
-pub fn clear_stale_managed_settings() -> Result<()> {
-    let settings = read()?;
-    let managed_signature = settings.get(KEYS[2]) == Some(&Value::String("on".into()))
-        && settings.get(KEYS[3]) == Some(&Value::Bool(true))
-        && settings.get(KEYS[4]) == Some(&Value::Bool(true))
-        && settings.get(KEYS[5]) == Some(&Value::String(REMOTE_INFERENCE_ROUTE.into()));
-    let loopback = settings
-        .get(KEYS[0])
-        .and_then(Value::as_str)
-        .and_then(|value| value.parse::<reqwest::Url>().ok())
-        .and_then(|url| url.host_str().map(str::to_owned))
-        .is_some_and(|host| matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1"));
-    if managed_signature && loopback {
-        clear_proxy_settings()?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,12 +177,12 @@ mod tests {
             ("remote.SSH.configFile".into(), json!("/custom/ssh/config")),
             ("[rust]".into(), json!({"editor.formatOnSave": true})),
         ]);
-        apply_proxy_settings(&mut settings, "http://127.0.0.1:43123");
+        let mut ownership = SettingsOwnership::default();
+        ownership.apply(&mut settings, "http://127.0.0.1:43123");
         assert!(proxy_settings_match(&settings, "http://127.0.0.1:43123"));
         assert_eq!(settings["editor.fontSize"], json!(14));
         assert_eq!(settings["[rust]"], json!({"editor.formatOnSave": true}));
-        assert!(remove_proxy_settings(&mut settings));
-        assert!(!remove_proxy_settings(&mut settings));
+        ownership.restore(&mut settings);
         assert!(!settings.contains_key(KEYS[0]));
         assert_eq!(settings["editor.fontSize"], json!(14));
     }
@@ -179,5 +218,44 @@ mod tests {
         assert!(!settings.contains_key(NO_PROXY_KEY));
         assert_eq!(settings["[rust]"], json!({"editor.formatOnSave": true}));
         assert_eq!(settings[KEYS[5]], json!(REMOTE_INFERENCE_ROUTE));
+    }
+
+    #[test]
+    fn releasing_takeover_restores_original_values_and_preserves_user_edits() {
+        let original = BTreeMap::from([
+            ("http.proxy".into(), json!("http://company:8080")),
+            (NO_PROXY_KEY.into(), json!(["internal"])),
+            (KEYS[5].into(), json!("remote")),
+        ]);
+        let mut settings = original.clone();
+        let mut ownership = SettingsOwnership::default();
+        ownership.apply(&mut settings, "http://127.0.0.1:43123");
+        ownership.apply(&mut settings, "http://127.0.0.1:43124");
+        settings.insert(KEYS[3].into(), json!(false));
+        ownership.restore(&mut settings);
+        assert_eq!(settings["http.proxy"], original["http.proxy"]);
+        assert_eq!(settings[NO_PROXY_KEY], original[NO_PROXY_KEY]);
+        assert_eq!(settings[KEYS[5]], original[KEYS[5]]);
+        assert_eq!(settings[KEYS[3]], json!(false));
+        let unchanged = settings.clone();
+        SettingsOwnership::default().restore(&mut settings);
+        assert_eq!(
+            settings, unchanged,
+            "releasing unowned settings must do nothing"
+        );
+    }
+
+    #[test]
+    fn serialized_ownership_recovers_after_a_crash_and_reapply_keeps_user_changes() {
+        let original = BTreeMap::from([("http.proxy".into(), json!("http://company:8080"))]);
+        let mut settings = original;
+        let mut ownership = SettingsOwnership::default();
+        ownership.apply(&mut settings, "http://127.0.0.1:43123");
+        let bytes = serde_json::to_vec(&ownership).unwrap();
+        let mut recovered: SettingsOwnership = serde_json::from_slice(&bytes).unwrap();
+        settings.insert("http.proxy".into(), json!("http://new-company:8080"));
+        recovered.apply(&mut settings, "http://127.0.0.1:43124");
+        recovered.restore(&mut settings);
+        assert_eq!(settings["http.proxy"], json!("http://new-company:8080"));
     }
 }

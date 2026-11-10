@@ -1,0 +1,22 @@
+@use "../../styles/typography" as typography;
+
+.pageTitle { display: block; font-size: typography.$font-size-base; line-height: 1.5; }
+.modelSelect { width: clamp(150px, calc(100vw - 650px), 300px); min-width: 0; }
+.panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; font-size: typography.$font-size-base; }
+.panel p { margin: 0; overflow-wrap: anywhere; }
+.panel small { color: var(--vscode-descriptionForeground); font-size: typography.$font-size-xs; }
+.panel a, .textButton { color: var(--vscode-textLink-foreground); }
+.error { color: var(--vscode-errorForeground); }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.steps li { display: flex; align-items: center; gap: 14px; }
+.steps li > div { display: flex; flex: 1; flex-direction: column; gap: 4px; }
+.textButton { background: none; border: 0; cursor: pointer; font: inherit; }
+.instruction { display: flex; align-items: center; gap: 12px; }
+.instruction code { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: typography.$font-size-xs; }
+.evidence, .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.evidence > div, .metrics > div { display: flex; flex-direction: column; gap: 6px; }
+.resultHeader { display: flex; align-items: center; gap: 12px; }
+.resultHeader > strong { flex: 1; }
+[data-state="passed"] { color: var(--vscode-testing-iconPassed); }
+[data-state="failed"] { color: var(--vscode-errorForeground); }
+[data-state="waiting"], [data-state="untested"], [data-state="inconclusive"] { color: var(--vscode-descriptionForeground); }

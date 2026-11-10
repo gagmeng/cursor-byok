@@ -194,6 +194,10 @@ async fn run_sse_handler(
     let (parts, body) = buffered(request).await?;
     let request: agent::BidiRequestId = connect::decode_unary(&body)?;
     let route = registry.wait_route(&request.request_id).await;
+    registry
+        .store()
+        .observe_diagnostic_stream(&request.request_id)
+        .await?;
     let trace = registry.trace(&request.request_id);
     trace.resume();
     trace.request(

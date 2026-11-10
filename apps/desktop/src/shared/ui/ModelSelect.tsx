@@ -78,7 +78,7 @@ export function ModelSelect(props: ModelSelectProps) {
   const firstOption = useRef<HTMLLabelElement>(null);
   const menuId = useId();
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 220, maxHeight: 280 });
+  const [position, setPosition] = useState({ left: 0, top: 0, width: 420, maxHeight: 280 });
   const items = useMemo(() => groupedItems(options), [options]);
   const selected = useMemo(
     () => new Set(mode === "multiple" ? props.value : [props.value]),
@@ -91,9 +91,9 @@ export function ModelSelect(props: ModelSelectProps) {
       placement: "bottom-start",
       middleware: [offset(5), flip({ padding: 10 }), shift({ padding: 10 }), size({
         padding: 10,
-        apply: ({ rects, availableHeight }) => setPosition((current) => ({
+        apply: ({ rects, availableWidth, availableHeight }) => setPosition((current) => ({
           ...current,
-          width: rects.reference.width,
+          width: Math.min(availableWidth, Math.max(420, rects.reference.width)),
           maxHeight: Math.max(120, availableHeight),
         })),
       })],
@@ -141,8 +141,6 @@ export function ModelSelect(props: ModelSelectProps) {
 
   const openMenu = () => {
     if (disabled) return;
-    const width = root.current?.getBoundingClientRect().width;
-    if (width) setPosition((current) => ({ ...current, width }));
     setOpen(true);
   };
 
@@ -154,6 +152,7 @@ export function ModelSelect(props: ModelSelectProps) {
         className={styles.trigger}
         disabled={disabled}
         aria-label={t("筛选项：{label}，{summary}", { label, summary })}
+        title={summary}
         aria-haspopup="listbox"
         aria-controls={open ? menuId : undefined}
         aria-expanded={open}
@@ -176,7 +175,7 @@ export function ModelSelect(props: ModelSelectProps) {
       aria-label={label}
       style={position}
       onPointerDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
+      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}
     >
       <div
         className={styles.listFrame}

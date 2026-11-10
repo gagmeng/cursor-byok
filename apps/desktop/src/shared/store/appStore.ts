@@ -61,6 +61,8 @@ let snapshot: AppSnapshot = {
 };
 
 const listeners = new Set<() => void>();
+let refreshGeneration = 0;
+let callsGeneration = 0;
 
 function update(patch: Partial<AppSnapshot>) {
   snapshot = { ...snapshot, ...patch };
@@ -85,24 +87,29 @@ export const appStore = {
 
   async refresh() {
     update({ busy: true, error: null });
-    try {
-      const [models, calls, overview, settings, ports, pricing, cursorHarness, pluginRuntime, plugins] = await Promise.all([
-        api.models(),
-        api.calls(),
-        api.overview(),
-        api.observability(),
-        api.ports(),
-        api.pricingSettings(),
-        api.cursorHarness(),
-        api.pluginRuntime(),
-        api.plugins(),
-      ]);
-      update({ models, calls, overview, detailed: settings.detailed, ports, pricing, cursorHarness, pluginRuntime, plugins });
-    } catch (cause) {
-      update({ error: cause instanceof Error ? cause.message : String(cause) });
-    } finally {
-      update({ busy: false });
-    }
+    const generation = ++refreshGeneration;
+    const callsVersion = ++callsGeneration;
+    const errors: string[] = [];
+    const load = async <T,>(task: Promise<T>, patch: (value: T) => Partial<AppSnapshot>) => {
+      try {
+        const value = await task;
+        if (generation === refreshGeneration) update(patch(value));
+      } catch (cause) {
+        errors.push(cause instanceof Error ? cause.message : String(cause));
+      }
+    };
+    await Promise.all([
+      load(api.models(), (models) => ({ models })),
+      load(api.calls(), (calls) => callsVersion === callsGeneration ? ({ calls }) : ({})),
+      load(api.overview(), (overview) => ({ overview })),
+      load(api.observability(), ({ detailed }) => ({ detailed })),
+      load(api.ports(), (ports) => ({ ports })),
+      load(api.pricingSettings(), (pricing) => ({ pricing })),
+      load(api.cursorHarness(), (cursorHarness) => ({ cursorHarness })),
+      load(api.pluginRuntime(), (pluginRuntime) => ({ pluginRuntime })),
+      load(api.plugins(), (plugins) => ({ plugins })),
+    ]);
+    if (generation === refreshGeneration) update({ busy: false, error: errors.length ? errors.join("; ") : null });
   },
 
   async deleteModel(modelHash: string) {
@@ -224,8 +231,10 @@ export const appStore = {
   },
 
   async refreshCalls() {
+    const generation = ++callsGeneration;
     try {
-      update({ calls: await api.calls() });
+      const calls = await api.calls();
+      if (generation === callsGeneration) update({ calls });
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
     }

@@ -37,7 +37,21 @@ pub struct SaveModels {
 }
 
 pub async fn list(State(service): State<ControlService>) -> Result<Json<Vec<ModelConfig>>> {
-    Ok(Json(service.models().await?))
+    let mut models = service.models().await?;
+    for model in &mut models {
+        model.api_key.clear();
+        model.custom_headers = serde_json::json!({});
+    }
+    Ok(Json(models))
+}
+
+pub async fn detail(
+    State(service): State<ControlService>,
+    Path(model_hash): Path<String>,
+) -> Result<Json<ModelConfig>> {
+    Ok(Json(service.store.model(&model_hash).await?.ok_or_else(
+        || crate::Error::RunNotFound(format!("model {model_hash}")),
+    )?))
 }
 
 pub async fn create(

@@ -39,16 +39,21 @@ impl PluginDataStore {
         let path = self.path(plugin_id, key)?;
         let lock = self.lock(plugin_id);
         let _guard = lock.lock().await;
-        match tokio::fs::read(&path).await {
-            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Ok(serde_json::Value::Null)
-            }
-            Err(error) => Err(Error::Config(format!(
-                "plugin data read failed at {}: {error}",
-                path.display()
-            ))),
-        }
+        read_json(&path).await
+    }
+
+    pub async fn modify<T>(
+        &self,
+        plugin_id: &str,
+        key: &str,
+        mutation: impl FnOnce(serde_json::Value) -> Result<(serde_json::Value, T)>,
+    ) -> Result<T> {
+        let path = self.path(plugin_id, key)?;
+        let lock = self.lock(plugin_id);
+        let _guard = lock.lock().await;
+        let (value, result) = mutation(read_json(&path).await?)?;
+        self.write_locked(&path, key, &value).await?;
+        Ok(result)
     }
 
     pub async fn update(
@@ -141,6 +146,17 @@ impl PluginDataStore {
     }
 }
 
+async fn read_json(path: &Path) -> Result<serde_json::Value> {
+    match tokio::fs::read(path).await {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::Value::Null),
+        Err(error) => Err(Error::Config(format!(
+            "plugin data read failed at {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
 /// 单次完整写入:建目录、写临时文件、落盘、原子替换。
 /// 失败时返回失败步骤的标签,供上层区分重试与报错。
 fn write_once(
@@ -160,13 +176,6 @@ fn write_once(
         .map_err(|error| ("sync temporary file", error))?;
     drop(file);
     let _ = set_file_permissions(temporary);
-    // Windows 的 rename 不覆盖已存在文件,先删除旧文件。
-    #[cfg(windows)]
-    match std::fs::remove_file(target) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(("remove previous file", error)),
-    }
     std::fs::rename(temporary, target).map_err(|error| ("replace target file", error))?;
     let _ = set_file_permissions(target);
     Ok(())

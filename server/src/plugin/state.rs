@@ -243,42 +243,64 @@ impl PluginStateStore {
         resource_type: &str,
         drafts: Vec<ResourceDraft>,
     ) -> Result<UpsertOutcome> {
-        let mut records = self.resources(plugin_id, resource_type).await?;
-        let now = now_ms();
-        let mut outcome = UpsertOutcome {
-            added: 0,
-            updated: 0,
-        };
-        for draft in drafts {
-            if draft.key.trim().is_empty() {
-                return Err(Error::Protocol("plugin resource draft requires key".into()));
-            }
-            let state = draft
-                .state
-                .map_or(ResourceState::Ready, ResourceState::from);
-            match records.iter_mut().find(|record| record.key == draft.key) {
-                Some(existing) => {
-                    existing.private_data = draft.private_data;
-                    existing.state = state;
-                    existing.updated_at_ms = now;
-                    outcome.updated += 1;
+        self.write_resource_drafts(plugin_id, resource_type, drafts, true)
+            .await
+    }
+
+    pub async fn import_missing_resources(
+        &self,
+        plugin_id: &str,
+        resource_type: &str,
+        drafts: Vec<ResourceDraft>,
+    ) -> Result<UpsertOutcome> {
+        self.write_resource_drafts(plugin_id, resource_type, drafts, false)
+            .await
+    }
+
+    async fn write_resource_drafts(
+        &self,
+        plugin_id: &str,
+        resource_type: &str,
+        drafts: Vec<ResourceDraft>,
+        overwrite: bool,
+    ) -> Result<UpsertOutcome> {
+        self.modify_resources(plugin_id, resource_type, move |records| {
+            let now = now_ms();
+            let mut outcome = UpsertOutcome {
+                added: 0,
+                updated: 0,
+            };
+            for draft in drafts {
+                if draft.key.trim().is_empty() {
+                    return Err(Error::Protocol("plugin resource draft requires key".into()));
                 }
-                None => {
-                    records.push(ResourceRecord {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        key: draft.key,
-                        private_data: draft.private_data,
-                        state,
-                        created_at_ms: now,
-                        updated_at_ms: now,
-                    });
-                    outcome.added += 1;
+                let state = draft
+                    .state
+                    .map_or(ResourceState::Ready, ResourceState::from);
+                match records.iter_mut().find(|record| record.key == draft.key) {
+                    Some(existing) if overwrite => {
+                        existing.private_data = draft.private_data;
+                        existing.state = state;
+                        existing.updated_at_ms = now;
+                        outcome.updated += 1;
+                    }
+                    Some(_) => {}
+                    None => {
+                        records.push(ResourceRecord {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            key: draft.key,
+                            private_data: draft.private_data,
+                            state,
+                            created_at_ms: now,
+                            updated_at_ms: now,
+                        });
+                        outcome.added += 1;
+                    }
                 }
             }
-        }
-        self.save_resources(plugin_id, resource_type, &records)
-            .await?;
-        Ok(outcome)
+            Ok(outcome)
+        })
+        .await
     }
 
     pub async fn apply_patch(
@@ -288,20 +310,21 @@ impl PluginStateStore {
         resource_id: &str,
         patch: ResourcePatch,
     ) -> Result<()> {
-        let mut records = self.resources(plugin_id, resource_type).await?;
-        let record = records
-            .iter_mut()
-            .find(|record| record.id == resource_id)
-            .ok_or_else(|| Error::RunNotFound(format!("plugin resource {resource_id}")))?;
-        if let Some(private_data) = patch.private_data {
-            record.private_data = private_data;
-        }
-        if let Some(state) = patch.state {
-            record.state = state.into();
-        }
-        record.updated_at_ms = now_ms();
-        self.save_resources(plugin_id, resource_type, &records)
-            .await
+        self.modify_resources(plugin_id, resource_type, move |records| {
+            let record = records
+                .iter_mut()
+                .find(|record| record.id == resource_id)
+                .ok_or_else(|| Error::RunNotFound(format!("plugin resource {resource_id}")))?;
+            if let Some(private_data) = patch.private_data {
+                record.private_data = private_data;
+            }
+            if let Some(state) = patch.state {
+                record.state = state.into();
+            }
+            record.updated_at_ms = now_ms();
+            Ok(())
+        })
+        .await
     }
 
     pub async fn remove_resource(
@@ -310,15 +333,15 @@ impl PluginStateStore {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<ResourceRecord> {
-        let mut records = self.resources(plugin_id, resource_type).await?;
-        let index = records
-            .iter()
-            .position(|record| record.id == resource_id)
-            .ok_or_else(|| Error::RunNotFound(format!("plugin resource {resource_id}")))?;
-        let removed = records.remove(index);
-        self.save_resources(plugin_id, resource_type, &records)
-            .await?;
-        Ok(removed)
+        self.modify_resources(plugin_id, resource_type, move |records| {
+            let index = records
+                .iter()
+                .position(|record| record.id == resource_id)
+                .ok_or_else(|| Error::RunNotFound(format!("plugin resource {resource_id}")))?;
+            let removed = records.remove(index);
+            Ok(removed)
+        })
+        .await
     }
 
     pub async fn models(&self, plugin_id: &str, provider_id: &str) -> Result<Vec<StoredModel>> {
@@ -381,18 +404,22 @@ impl PluginStateStore {
         self.data.clear(plugin_id).await
     }
 
-    async fn save_resources(
+    async fn modify_resources<T>(
         &self,
         plugin_id: &str,
         resource_type: &str,
-        records: &[ResourceRecord],
-    ) -> Result<()> {
+        mutation: impl FnOnce(&mut Vec<ResourceRecord>) -> Result<T>,
+    ) -> Result<T> {
         self.data
-            .update(
-                plugin_id,
-                &resource_key(resource_type),
-                &serde_json::to_value(records)?,
-            )
+            .modify(plugin_id, &resource_key(resource_type), move |value| {
+                let mut records = if value.is_null() {
+                    Vec::new()
+                } else {
+                    serde_json::from_value(value)?
+                };
+                let result = mutation(&mut records)?;
+                Ok((serde_json::to_value(records)?, result))
+            })
             .await
     }
 }
@@ -473,6 +500,82 @@ mod tests {
         let records = store.resources("dev.example", "account").await.unwrap();
         assert!(!records[0].state.is_ready(100));
         assert!(records[0].state.is_ready(300), "cooling expires over time");
+    }
+
+    #[tokio::test]
+    async fn migration_keeps_existing_plugin_credentials() {
+        let (_root, store) = store();
+        store
+            .upsert_resources(
+                "dev.example",
+                "account",
+                vec![ResourceDraft {
+                    key: "same".into(),
+                    private_data: serde_json::json!({"token":"local"}),
+                    state: None,
+                }],
+            )
+            .await
+            .unwrap();
+        let outcome = store
+            .import_missing_resources(
+                "dev.example",
+                "account",
+                vec![
+                    ResourceDraft {
+                        key: "same".into(),
+                        private_data: serde_json::json!({"token":"imported"}),
+                        state: None,
+                    },
+                    ResourceDraft {
+                        key: "new".into(),
+                        private_data: serde_json::json!({"token":"new"}),
+                        state: None,
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome.added, 1);
+        assert_eq!(outcome.updated, 0);
+        assert_eq!(
+            store
+                .resources("dev.example", "account")
+                .await
+                .unwrap()
+                .iter()
+                .find(|r| r.key == "same")
+                .unwrap()
+                .private_data["token"],
+            "local"
+        );
+    }
+
+    #[tokio::test]
+    async fn simultaneous_imports_keep_every_missing_account() {
+        let (_root, store) = store();
+        let drafts = |key: &str| {
+            vec![ResourceDraft {
+                key: key.into(),
+                private_data: serde_json::json!({"token": key}),
+                state: None,
+            }]
+        };
+        let (first, second) = tokio::join!(
+            store.import_missing_resources("dev.example", "account", drafts("first")),
+            store.import_missing_resources("dev.example", "account", drafts("second"))
+        );
+        assert_eq!(first.unwrap().added, 1);
+        assert_eq!(second.unwrap().added, 1);
+        assert_eq!(
+            store
+                .resources("dev.example", "account")
+                .await
+                .unwrap()
+                .len(),
+            2,
+            "concurrent device imports cannot discard one another's credentials"
+        );
     }
 
     #[tokio::test]

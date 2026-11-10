@@ -36,6 +36,7 @@ test("built_in_and_plugin_model_ids_load_settings_over_the_management_http_bound
     assert.deepEqual(await api.modelSystemPrompt(modelId), defaultSettings);
   }
   assert.deepEqual(requested, [
+    "/__byok-api__/api/session",
     `${collectionUrl}?model_id=builtin-hash`,
     `${collectionUrl}?model_id=${encodeURIComponent("plugin/provider/模型 ?#🙂")}`,
   ]);
@@ -59,6 +60,25 @@ test("saving_sends_the_model_id_and_complete_disabled_content_to_the_collection_
 test("failed_http_saves_report_the_management_service_error", async (context) => {
   context.mock.method(globalThis, "fetch", async () => Response.json({ message: "model system prompt write failed" }, { status: 500 }));
   await assert.rejects(api.setModelSystemPrompt("builtin-hash", defaultSettings), /model system prompt write failed/);
+});
+
+test("a_restarted_server_reestablishes_the_session_and_retries_once", async (context) => {
+  const requested = [];
+  context.mock.method(globalThis, "fetch", async (input) => {
+    requested.push(String(input));
+    if (requested.length === 1) return new Response("session expired", {status:401,headers:{"x-cursor-byok-session":"required"}});
+    if(String(input).endsWith("/session")) return new Response(null,{status:204});
+    return Response.json(defaultSettings);
+  });
+  assert.deepEqual(await api.modelSystemPrompt("builtin-hash"), defaultSettings);
+  assert.deepEqual(requested,[`${collectionUrl}?model_id=builtin-hash`,"/__byok-api__/api/session",`${collectionUrl}?model_id=builtin-hash`]);
+});
+
+test("ordinary_unauthorized_errors_are_reported_without_replaying_the_operation", async (context) => {
+  let calls=0;
+  context.mock.method(globalThis,"fetch",async()=>{calls++; return Response.json({message:"provider credentials rejected"},{status:401});});
+  await assert.rejects(api.setModelSystemPrompt("builtin-hash", defaultSettings), /provider credentials rejected/);
+  assert.equal(calls,1);
 });
 
 test("demo_defaults_and_saved_prompts_remain_independent_for_each_model", async (context) => {

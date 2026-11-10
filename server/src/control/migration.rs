@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub const FORMAT: &str = "cursor-byok-migration";
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// The plugin's resource accounts, kept in the shape the plugin's own import
 /// parser already understands so import reuses that path instead of growing a
@@ -28,12 +28,19 @@ pub struct MigrationPluginResources {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MigrationModel {
+    pub model_hash: String,
+    #[serde(flatten)]
+    pub config: ModelConfigInput,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MigrationFile {
     pub format: String,
     pub version: u32,
     pub app_version: String,
     pub exported_at_ms: i64,
-    pub models: Vec<ModelConfigInput>,
+    pub models: Vec<MigrationModel>,
     pub plugin_resources: Vec<MigrationPluginResources>,
     pub model_system_prompts: Vec<ModelSystemPromptConfig>,
 }
@@ -73,7 +80,7 @@ pub async fn import(
 impl From<&ModelConfig> for ModelConfigInput {
     fn from(model: &ModelConfig) -> Self {
         ModelConfigInput {
-            fallback_model_hash: None,
+            fallback_model_hash: model.fallback_model_hash.clone(),
             sort_order: model.sort_order,
             display_name: model.display_name.clone(),
             group_name: model.group_name.clone(),
@@ -135,18 +142,17 @@ mod tests {
         }
     }
 
-    /// The whole point of the file is carrying the key across machines, so the
-    /// export must keep it and drop only the identity the destination assigns.
     #[test]
-    fn export_carries_the_key_and_drops_the_local_identity() {
-        let input = ModelConfigInput::from(&model());
-        let json = serde_json::to_value(&input).unwrap();
+    fn portable_models_keep_credentials_and_the_identity_used_by_references() {
+        let model = model();
+        let portable = MigrationModel {
+            model_hash: model.model_hash.clone(),
+            config: ModelConfigInput::from(&model),
+        };
+        let json = serde_json::to_value(&portable).unwrap();
         assert_eq!(json["api_key"], "sk-secret");
         assert_eq!(json["display_name"], "glm-5.3-官方");
-        assert!(
-            json.get("model_hash").is_none(),
-            "hash is assigned on import"
-        );
+        assert_eq!(json["model_hash"], "hash");
         assert!(json.get("created_at_ms").is_none());
     }
 

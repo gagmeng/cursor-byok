@@ -86,8 +86,8 @@ impl Store {
             .models()
             .await?
             .into_iter()
-            .map(|model| model.model_hash)
-            .collect::<HashSet<_>>();
+            .map(|model| model_hash(&ModelConfigInput::from(&model)))
+            .collect::<Result<HashSet<_>>>()?;
         let mut seen = HashSet::with_capacity(inputs.len());
         let mut models = Vec::with_capacity(inputs.len());
         for input in inputs {

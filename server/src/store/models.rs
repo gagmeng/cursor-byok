@@ -20,6 +20,56 @@ const MODEL_COLUMNS: &str = r#"
 "#;
 
 impl Store {
+    pub async fn import_model_configuration(
+        &self,
+        models: &[(String, ModelConfigInput)],
+        prompts: &[crate::model::ModelSystemPromptConfig],
+    ) -> Result<usize> {
+        crate::model::ModelSystemPromptConfig::validate_all(prompts)?;
+        let mut seen = HashSet::new();
+        let normalized = models
+            .iter()
+            .map(|(id, input)| {
+                if id.is_empty() || !seen.insert(id.clone()) {
+                    return Err(Error::Config(format!(
+                        "migration model identity is empty or duplicated: {id}"
+                    )));
+                }
+                Ok((id.clone(), normalize_model_input(input)?))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut session = self.write_session().await?;
+        let mut tx = session.begin().await?;
+        let mut added = 0;
+        for (id, input) in &normalized {
+            added +=
+                usize::from(insert_model_with_conflict(&mut tx, id, input, now_ms(), true).await?);
+        }
+        validate_fallbacks(&mut tx).await?;
+        for prompt in prompts.iter().filter(|prompt| {
+            !prompt
+                .model_id
+                .starts_with(crate::plugin::ADAPTER_ID_PREFIX)
+        }) {
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM model_configs WHERE model_hash = ?)",
+            )
+            .bind(&prompt.model_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !exists {
+                return Err(Error::Config(format!(
+                    "migration system prompt model does not exist: {}",
+                    prompt.model_id
+                )));
+            }
+            super::model_system_prompts::insert_missing(&mut tx, prompt).await?;
+        }
+        tx.commit().await?;
+        session.committed();
+        Ok(added)
+    }
+
     pub async fn models(&self) -> Result<Vec<ModelConfig>> {
         let query =
             format!("SELECT {MODEL_COLUMNS} FROM model_configs ORDER BY sort_order, display_name");
@@ -63,9 +113,24 @@ impl Store {
         let now = now_ms();
         let mut session = self.write_session().await?;
         let mut transaction = session.begin().await?;
-        for (hash, input) in &normalized {
-            insert_model(&mut transaction, hash, input, now).await?;
+        let existing = sqlx::query(&format!("SELECT {MODEL_COLUMNS} FROM model_configs"))
+            .fetch_all(&mut *transaction)
+            .await?;
+        let fingerprints = existing
+            .into_iter()
+            .map(model_from_row)
+            .collect::<Result<Vec<_>>>()?
+            .iter()
+            .map(|model| model_hash(&ModelConfigInput::from(model)))
+            .collect::<Result<HashSet<_>>>()?;
+        for (identity, input) in &mut normalized {
+            if fingerprints.contains(identity) {
+                return Err(Error::Config("model configuration already exists".into()));
+            }
+            *identity = uuid::Uuid::new_v4().simple().to_string();
+            insert_model(&mut transaction, identity, input, now).await?;
         }
+        validate_fallbacks(&mut transaction).await?;
         transaction.commit().await?;
         session.committed();
 
@@ -89,12 +154,26 @@ impl Store {
         let now = now_ms();
         let mut session = self.write_session().await?;
         let mut transaction = session.begin().await?;
+        let existing = sqlx::query(&format!("SELECT {MODEL_COLUMNS} FROM model_configs"))
+            .fetch_all(&mut *transaction)
+            .await?;
+        let fingerprints = existing
+            .into_iter()
+            .map(model_from_row)
+            .collect::<Result<Vec<_>>>()?
+            .iter()
+            .map(|model| model_hash(&ModelConfigInput::from(model)))
+            .collect::<Result<HashSet<_>>>()?;
         let mut inserted = 0;
-        for (hash, input) in &normalized {
-            inserted += usize::from(
-                insert_model_with_conflict(&mut transaction, hash, input, now, true).await?,
-            );
+        for (fingerprint, input) in &normalized {
+            if fingerprints.contains(fingerprint) {
+                continue;
+            }
+            let identity = uuid::Uuid::new_v4().simple().to_string();
+            insert_model(&mut transaction, &identity, input, now).await?;
+            inserted += 1;
         }
+        validate_fallbacks(&mut transaction).await?;
         transaction.commit().await?;
         session.committed();
         Ok(inserted)
@@ -110,16 +189,10 @@ impl Store {
             .await?
             .ok_or_else(|| Error::RunNotFound(format!("model {current_hash}")))?;
         let input = normalize_model_input(input)?;
-        let next_hash = model_hash(&input)?;
+        let next_hash = current.model_hash.clone();
         let now = now_ms();
         let mut session = self.write_session().await?;
         let mut transaction = session.begin().await?;
-        if next_hash != current.model_hash {
-            sqlx::query("UPDATE llm_calls SET model_hash = NULL WHERE model_hash = ?")
-                .bind(&current.model_hash)
-                .execute(&mut *transaction)
-                .await?;
-        }
         let result = sqlx::query(
             r#"UPDATE model_configs SET
                 model_hash = ?, sort_order = ?, display_name = ?, group_name = ?, fallback_model_hash = ?, model_type = ?, base_url = ?,
@@ -162,7 +235,11 @@ impl Store {
         if result.rows_affected() != 1 {
             return Err(Error::RunNotFound(format!("model {current_hash}")));
         }
-        super::model_system_prompts::rekey(&mut transaction, current_hash, &next_hash).await?;
+        sqlx::query("DELETE FROM model_capability_tests WHERE model_id = ?")
+            .bind(current_hash)
+            .execute(&mut *transaction)
+            .await?;
+        validate_fallbacks(&mut transaction).await?;
         transaction.commit().await?;
         session.committed();
         Ok(self
@@ -174,6 +251,17 @@ impl Store {
     pub async fn delete_model(&self, hash: &str) -> Result<()> {
         let mut session = self.write_session().await?;
         let mut transaction = session.begin().await?;
+        let fallback_users: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM model_configs WHERE fallback_model_hash = ?")
+                .bind(hash)
+                .fetch_one(&mut *transaction)
+                .await?;
+        let settings_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service_settings WHERE (setting_key = 'commit_settings' AND json_extract(value_json, '$.model_id') = ?) OR (setting_key = 'auto_review_model' AND json_extract(value_json, '$') = ?)").bind(hash).bind(hash).fetch_one(&mut *transaction).await?;
+        if fallback_users + settings_users > 0 {
+            return Err(Error::Config(format!(
+                "model {hash} is still referenced by fallback, Commit, or auto-review settings"
+            )));
+        }
         sqlx::query("UPDATE llm_calls SET model_hash = NULL WHERE model_hash = ?")
             .bind(hash)
             .execute(&mut *transaction)
@@ -186,10 +274,45 @@ impl Store {
             return Err(Error::RunNotFound(format!("model {hash}")));
         }
         super::model_system_prompts::remove(&mut transaction, hash).await?;
+        sqlx::query("DELETE FROM model_capability_tests WHERE model_id = ?")
+            .bind(hash)
+            .execute(&mut *transaction)
+            .await?;
         transaction.commit().await?;
         session.committed();
         Ok(())
     }
+}
+
+async fn validate_fallbacks(tx: &mut SqliteConnection) -> Result<()> {
+    let rows: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT model_hash, fallback_model_hash FROM model_configs")
+            .fetch_all(&mut *tx)
+            .await?;
+    let links: std::collections::HashMap<_, _> = rows.into_iter().collect();
+    for source in links.keys() {
+        let mut seen = HashSet::new();
+        let mut current = source.as_str();
+        while let Some(Some(target)) = links.get(current) {
+            if !seen.insert(current.to_owned()) {
+                return Err(Error::Config(format!(
+                    "model fallback chain contains a cycle: {source}"
+                )));
+            }
+            if !links.contains_key(target) {
+                return Err(Error::Config(format!(
+                    "model fallback target does not exist: {target}"
+                )));
+            }
+            if seen.len() > 4 {
+                return Err(Error::Config(format!(
+                    "model fallback chain exceeds four hops: {source}"
+                )));
+            }
+            current = target;
+        }
+    }
+    Ok(())
 }
 
 async fn insert_model(
@@ -368,5 +491,137 @@ mod tests {
             .unwrap();
         assert_eq!(cleared.model_hash, created.model_hash);
         assert_eq!(cleared.group_name, None);
+    }
+
+    #[tokio::test]
+    async fn editing_model_credentials_and_name_keeps_all_references() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        let mut input = model_input(None);
+        let backup = store.create_model(&input).await.unwrap();
+        input.display_name = "Primary".into();
+        input.fallback_model_hash = Some(backup.model_hash.clone());
+        let primary = store.create_model(&input).await.unwrap();
+        store
+            .set_commit_settings(crate::store::CommitSettings {
+                model_id: backup.model_hash.clone(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        store
+            .set_auto_review_model(Some(backup.model_hash.clone()))
+            .await
+            .unwrap();
+        let mut edited = model_input(None);
+        edited.display_name = "Renamed".into();
+        edited.api_key = "rotated-key".into();
+        let saved = store
+            .update_model(&backup.model_hash, &edited)
+            .await
+            .unwrap();
+        assert_eq!(
+            saved.model_hash, backup.model_hash,
+            "editable fields must not change persistent model identity"
+        );
+        assert_eq!(
+            store
+                .model(&primary.model_hash)
+                .await
+                .unwrap()
+                .unwrap()
+                .fallback_model_hash,
+            Some(saved.model_hash.clone())
+        );
+        assert_eq!(
+            store.commit_settings().await.unwrap().model_id,
+            saved.model_hash
+        );
+        assert_eq!(
+            store.auto_review_model().await.unwrap().as_deref(),
+            Some(saved.model_hash.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn model_identity_is_independent_of_configuration_and_duplicate_imports_stay_idempotent()
+    {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        let input = model_input(None);
+        let first = store.create_model(&input).await.unwrap();
+        assert_ne!(
+            first.model_hash,
+            model_hash(&input).unwrap(),
+            "persistent identity cannot be derived from editable credentials"
+        );
+        assert_eq!(
+            store
+                .create_models_if_missing(std::slice::from_ref(&input))
+                .await
+                .unwrap(),
+            0
+        );
+        let mut edited = input.clone();
+        edited.api_key = "rotated".into();
+        store
+            .update_model(&first.model_hash, &edited)
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .create_models_if_missing(std::slice::from_ref(&edited))
+                .await
+                .unwrap(),
+            0,
+            "import deduplication must inspect current settings after credentials rotate"
+        );
+        let second = store.create_model(&input).await.unwrap();
+        assert_ne!(second.model_hash, first.model_hash);
+        store.delete_model(&second.model_hash).await.unwrap();
+        assert_eq!(store.models().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn missing_and_cyclic_fallbacks_are_rejected_without_partial_updates() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        let mut input = model_input(None);
+        input.fallback_model_hash = Some("missing".into());
+        assert!(store.create_model(&input).await.is_err());
+        assert!(store.models().await.unwrap().is_empty());
+        input.fallback_model_hash = None;
+        let first = store.create_model(&input).await.unwrap();
+        input.display_name = "Second".into();
+        input.fallback_model_hash = Some(first.model_hash.clone());
+        let second = store.create_model(&input).await.unwrap();
+        input.fallback_model_hash = Some(second.model_hash.clone());
+        assert!(store.update_model(&first.model_hash, &input).await.is_err());
+        assert!(store
+            .model(&first.model_hash)
+            .await
+            .unwrap()
+            .unwrap()
+            .fallback_model_hash
+            .is_none());
+        assert!(
+            store.delete_model(&first.model_hash).await.is_err(),
+            "referenced models require explicit reassignment before deletion"
+        );
     }
 }

@@ -138,10 +138,10 @@ function PluginCard({ plugin, onOpen }: {
   onOpen: (pluginId: string, mode: "add" | "settings") => void;
 }) {
   const { locale } = useI18n();
-  const { ports } = useAppStore();
   const message = useMessage();
   const importInput = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const configured = plugin.providers.some((provider) => provider.configured);
   const accountCount = plugin.resources.reduce((count, resource) => count + resource.resources.length, 0);
   const modelCount = plugin.providers.reduce((count, provider) => count + provider.models.length, 0);
@@ -217,14 +217,13 @@ function PluginCard({ plugin, onOpen }: {
           {
             id: "export",
             label: t("批量导出"),
-            onSelect: () =>
-              void api.openExternalUrl(
-                api.pluginResourceExportUrl(
-                  ports.service_port,
-                  plugin.id,
-                  exportResource.type,
-                ),
-              ),
+            disabled: exporting,
+            onSelect: () => {
+              setExporting(true);
+              void api.exportPluginResources(plugin.id, exportResource.type)
+                .catch((cause: unknown) => message(cause instanceof Error ? cause.message : String(cause), { duration: 5000 }))
+                .finally(() => setExporting(false));
+            },
           },
         ]
       : []),

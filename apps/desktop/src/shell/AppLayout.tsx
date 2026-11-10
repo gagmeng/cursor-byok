@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { IconifyIcon } from "@iconify/react/offline";
 import KeepAliveRouteOutlet from "keepalive-for-react-router";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import cursorIconUrl from "../shared/assets/icons/cursor.svg";
 import { api } from "../shared/api";
 import { PageLayout } from "./layout/PageLayout";
@@ -18,13 +18,14 @@ import { appStore, useAppStore } from "../shared/store/appStore";
 import { useUpdateStore } from "../shared/store/updateStore";
 import styles from "./AppLayout.module.scss";
 import { PageActionsTarget } from "./PageActions";
+import { diagnosticsStore } from "../features/diagnostics/diagnosticsStore";
 
 type MenuItem =
   | { kind: "page"; path: string; label: string; icon: IconifyIcon | string }
   | { kind: "external"; id: string; label: string; icon: IconifyIcon | string }
   | { kind: "group"; label: string };
 
-const keptAlivePages = ["/", "/calls", "/settings", "/harness/cursor", "/plugins"];
+const keptAlivePages = ["/", "/calls", "/settings", "/harness/cursor", "/plugins", "/diagnostics", "/model-health"];
 const tutorialReadStorageKey = "cursor-byok:tutorial-read";
 // This repository's README is the user guide; the archived upstream docs site is not.
 const tutorialUrlByLocale = {
@@ -39,6 +40,13 @@ export function AppLayout() {
   const { locale } = useI18n();
   const message = useMessage();
   const location = useLocation();
+  const navigate = useNavigate();
+  const checkedOnboarding = useRef(false);
+  useEffect(() => {
+    if (!cursorHarness || checkedOnboarding.current) return;
+    checkedOnboarding.current = true;
+    if (cursorHarness.configured_models === 0 && cursorHarness.ca !== "ready" && location.pathname === "/") navigate("/diagnostics", { replace: true });
+  }, [cursorHarness, location.pathname, navigate]);
   const [leftActionTarget, setLeftActionTarget] = useState<HTMLDivElement | null>(null);
   const [rightActionTarget, setRightActionTarget] = useState<HTMLDivElement | null>(null);
   const [confirmTutorial, setConfirmTutorial] = useState(false);
@@ -52,6 +60,8 @@ export function AppLayout() {
   const menuItems: MenuItem[] = [
     { kind: "page", path: "/", label: t("数据概览"), icon: flatColorAreaChartIcon },
     { kind: "page", path: "/calls", label: t("调用详细"), icon: flatColorSalesPerformanceIcon },
+    { kind: "page", path: "/diagnostics", label: t("连接诊断"), icon: flatColorAboutIcon },
+    { kind: "page", path: "/model-health", label: t("模型健康"), icon: flatColorSalesPerformanceIcon },
     { kind: "group", label: t("模型配置") },
     { kind: "page", path: "/harness/cursor", label: "Cursor", icon: cursorIconUrl },
     { kind: "group", label: t("设置") },
@@ -134,7 +144,7 @@ export function AppLayout() {
       <div className={styles.actionRegion}>
         <Card className={styles.actions}>
           <div ref={setLeftActionTarget} className={styles.pageActions} />
-          {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>
+          {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh().then(() => location.pathname === "/diagnostics" || location.pathname === "/model-health" ? diagnosticsStore.refresh() : undefined)}>
             <Icon className={busy ? controls.spin : ""} icon={reloadIcon} size="1.1em" />
           </button></TooltipTrigger>}
           <div ref={setRightActionTarget} className={styles.pageActions} />

@@ -31,7 +31,7 @@ impl Store {
         session.committed();
         // VACUUM takes its own write session; retaining this guard would deadlock.
         drop(session);
-        if pruned.checkpoints == 0 && pruned.messages == 0 {
+        if pruned.checkpoints == 0 && pruned.messages == 0 && pruned.blobs == 0 {
             return Ok(());
         }
         tracing::info!(
@@ -68,10 +68,8 @@ struct PruneResult {
     estimated_bytes: i64,
 }
 
-/// One canonical definition of checkpoint liveness: every ancestor of a
-/// conversation head, where a head only counts while its conversation has an
-/// active run or was updated inside the grace window. Everything else is a
-/// dead branch left behind by compaction replacement or an abandoned resume.
+/// Current conversation heads own their full lineage regardless of idle time.
+/// Recently detached checkpoints retain a bounded crash-recovery window.
 async fn fill_live_checkpoints(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
     sqlx::query(
         "CREATE TEMP TABLE IF NOT EXISTS live_checkpoints(checkpoint_id INTEGER PRIMARY KEY)",
@@ -81,17 +79,13 @@ async fn fill_live_checkpoints(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
     sqlx::query("DELETE FROM live_checkpoints")
         .execute(&mut **tx)
         .await?;
-    // A conversation is live while a run holds it or its head checkpoint was
-    // written inside the grace window. conversations.updated_at_ms refreshes
-    // on every run finish, so it cannot distinguish a quiet conversation
-    // from one that just compacted; the head checkpoint's own creation time
-    // is the lineage's last real write.
     sqlx::query(
         "WITH RECURSIVE lineage(checkpoint_id) AS (
              SELECT current_checkpoint_id FROM conversations c
              JOIN conversation_checkpoints h ON h.checkpoint_id = c.current_checkpoint_id
              WHERE c.current_checkpoint_id IS NOT NULL
-               AND (c.active_run_id IS NOT NULL OR h.created_at_ms >= ?)
+             UNION
+             SELECT checkpoint_id FROM conversation_checkpoints WHERE created_at_ms >= ?
              UNION
              SELECT ck.parent_checkpoint_id
              FROM lineage l
@@ -108,6 +102,9 @@ async fn fill_live_checkpoints(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
 }
 
 async fn prune_tx(tx: &mut Transaction<'_, Sqlite>) -> Result<PruneResult> {
+    let free_before: i64 = sqlx::query_scalar("PRAGMA freelist_count")
+        .fetch_one(&mut **tx)
+        .await?;
     fill_live_checkpoints(tx).await?;
 
     // Every constraint here is NO ACTION, so deletes run leaves-first:
@@ -203,8 +200,9 @@ async fn prune_tx(tx: &mut Transaction<'_, Sqlite>) -> Result<PruneResult> {
         .rows_affected() as i64;
 
     let estimated_bytes = sqlx::query_scalar::<_, i64>(
-        "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+        "SELECT MAX(0, freelist_count - ?) * page_size FROM pragma_freelist_count(), pragma_page_size()",
     )
+    .bind(free_before)
     .fetch_one(&mut **tx)
     .await
     .unwrap_or(0);
@@ -291,12 +289,16 @@ mod tests {
         let (_directory, store) = store().await;
         let live = checkpoint_line(&store, "live", 3).await;
         let dead = checkpoint_line(&store, "dead", 2).await;
-        let dead_head = *dead.last().expect("dead lineage has a head");
         sqlx::query(
-            "UPDATE conversation_checkpoints SET created_at_ms = ? WHERE checkpoint_id = ?",
+            "UPDATE conversations SET current_checkpoint_id = NULL WHERE conversation_id = 'dead'",
+        )
+        .execute(store.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE conversation_checkpoints SET created_at_ms = ? WHERE conversation_id = 'dead'",
         )
         .bind(now_ms() - PRUNE_GRACE_MS - 1)
-        .bind(dead_head)
         .execute(store.pool())
         .await
         .unwrap();
@@ -332,10 +334,15 @@ mod tests {
         let live = checkpoint_line(&store, "live", 2).await;
         let dead = checkpoint_line(&store, "dead", 2).await;
         sqlx::query(
-            "UPDATE conversation_checkpoints SET created_at_ms = ? WHERE checkpoint_id = ?",
+            "UPDATE conversations SET current_checkpoint_id = NULL WHERE conversation_id = 'dead'",
+        )
+        .execute(store.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE conversation_checkpoints SET created_at_ms = ? WHERE conversation_id = 'dead'",
         )
         .bind(now_ms() - PRUNE_GRACE_MS - 1)
-        .bind(dead.last().unwrap())
         .execute(store.pool())
         .await
         .unwrap();
@@ -385,5 +392,88 @@ mod tests {
         store.vacuum().await.unwrap();
         // Still writable after the rewrite.
         checkpoint_line(&store, "v2", 1).await;
+    }
+
+    #[tokio::test]
+    async fn idle_conversations_resume_with_the_same_history_after_pruning_and_restart() {
+        let (directory, store) = store().await;
+        let ids = checkpoint_line(&store, "idle", 2).await;
+        sqlx::query("UPDATE conversation_checkpoints SET created_at_ms = ?")
+            .bind(now_ms() - PRUNE_GRACE_MS * 2)
+            .execute(store.pool())
+            .await
+            .unwrap();
+        store.prune_dead_lineages().await.unwrap();
+        store.pool().close().await;
+        let reopened = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        let head = reopened
+            .ensure_conversation(&ConversationId::new("idle"))
+            .await
+            .unwrap();
+        assert_eq!(head.0, *ids.last().unwrap());
+        let remaining = checkpoint_ids(&reopened).await;
+        assert!(ids.iter().all(|id| remaining.contains(id)));
+        checkpoint_line(&reopened, "after-restart", 1).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires REVIEW_DATABASE_COPY pointing to an isolated real database copy"]
+    async fn measures_maintenance_on_a_real_database_copy() {
+        let path = std::path::PathBuf::from(std::env::var("REVIEW_DATABASE_COPY").unwrap());
+        assert!(path
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("cursor-byok-review-fixes-"));
+        let store = Store::connect(&format!("sqlite://{}", path.display()))
+            .await
+            .unwrap();
+        let mut heads = sqlx::query_as::<_, (String, i64)>("SELECT conversation_id, current_checkpoint_id FROM conversations WHERE current_checkpoint_id IS NOT NULL").fetch_all(store.pool()).await.unwrap();
+        store.prune_dead_lineages().await.unwrap();
+        for (conversation, head) in heads.drain(..) {
+            let current = store
+                .ensure_conversation(&ConversationId::new(conversation))
+                .await
+                .unwrap();
+            assert_eq!(current.0, head);
+        }
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(store.pool())
+            .await
+            .unwrap();
+        assert!(violations.is_empty());
+        let mut durations = Vec::new();
+        for _ in 0..20 {
+            let start = std::time::Instant::now();
+            store
+                .overview_in_timezone(
+                    None,
+                    None,
+                    None,
+                    Some(86_400_000),
+                    chrono_tz::Asia::Shanghai,
+                )
+                .await
+                .unwrap();
+            durations.push(start.elapsed().as_micros());
+        }
+        durations.sort_unstable();
+        println!(
+            "real database annual overview: median_us={}, max_us={}",
+            durations[durations.len() / 2],
+            durations.last().unwrap()
+        );
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(store.pool())
+            .await
+            .unwrap();
+        store.pool().close().await;
     }
 }

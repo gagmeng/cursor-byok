@@ -456,7 +456,10 @@ mod tests {
             .unwrap();
 
             assert_eq!(checksum_after, checksum_before);
-            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+            assert_eq!(
+                versions,
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            );
             let prompt_tables: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
                  AND name IN ('model_system_prompts', 'conversation_system_prompts')",
@@ -468,6 +471,53 @@ mod tests {
             assert_eq!(checkpoint_table_exists, 1);
             assert_eq!(argument_error_column_exists, 1);
         }
+    }
+
+    #[tokio::test]
+    async fn repairing_a_dangling_head_allows_the_same_conversation_to_resume() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("dangling-head.db");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        let historical = migrator_with_line_endings(MigrationLineEndings::Lf);
+        Migrator {
+            migrations: Cow::Owned(historical.iter().take(12).cloned().collect()),
+            ..Migrator::DEFAULT
+        }
+        .run(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO conversations(conversation_id,current_checkpoint_id,active_run_id,updated_at_ms) VALUES ('idle-damaged',99999,'gone-run',7)").execute(&pool).await.unwrap();
+        pool.close().await;
+        let store = crate::store::Store::connect(&format!("sqlite://{}", path.display()))
+            .await
+            .unwrap();
+        let recovered: (Option<i64>,Option<String>,i64) = sqlx::query_as("SELECT current_checkpoint_id,active_run_id,updated_at_ms FROM conversations WHERE conversation_id='idle-damaged'").fetch_one(store.pool()).await.unwrap();
+        assert_eq!(
+            recovered,
+            (None, None, 7),
+            "only the invalid ownership pointers should change"
+        );
+        let head = store
+            .ensure_conversation(&crate::model::ConversationId::new("idle-damaged"))
+            .await
+            .unwrap();
+        assert_ne!(
+            head.0, 99999,
+            "the same conversation must receive a valid new checkpoint after repair"
+        );
+        assert!(sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(store.pool())
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

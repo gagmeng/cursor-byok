@@ -87,7 +87,7 @@ export interface MigrationFile {
   version: number;
   app_version: string;
   exported_at_ms: number;
-  models: ModelInput[];
+  models: (ModelInput & { model_hash: string })[];
   plugin_resources: { plugin_id: string; resource_type: string; accounts: unknown[] }[];
   model_system_prompts: (ModelSystemPromptSettings & { model_id: string })[];
 }
@@ -145,7 +145,49 @@ export interface CursorHarnessStatus {
   settings_applied: boolean;
   proxy_url: string | null;
   ca_install_command: string | null;
+  startup_error: string | null;
 }
+
+export interface ConnectionDiagnostic {
+  diagnostic_id: string;
+  scope: "local" | "ssh";
+  marker: string;
+  created_at_ms: number;
+  request_id: string | null;
+  conversation_id: string | null;
+  request_seen_at_ms: number | null;
+  stream_seen_at_ms: number | null;
+  upstream_response_at_ms: number | null;
+  tool_result_at_ms: number | null;
+  error_message: string | null;
+}
+export interface ConnectionDiagnostics {
+  harness: CursorHarnessStatus;
+  configured_models: number;
+  sessions: ConnectionDiagnostic[];
+}
+export type ModelCapability = "streaming" | "tools" | "vision" | "cache";
+export interface CapabilityResult {
+  model_id: string;
+  capability: ModelCapability;
+  status: "passed" | "failed" | "inconclusive" | "cancelled";
+  tested_at_ms: number;
+  duration_ms: number;
+  detail: string;
+}
+export interface ModelHealth {
+  model_id: string;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  running: number;
+  success_rate: number | null;
+  average_first_response_ms: number | null;
+  tokens_per_second: number | null;
+  last_call_at_ms: number;
+  last_error: string | null;
+}
+export interface ModelDiagnostics { health: ModelHealth[]; capabilities: CapabilityResult[] }
 
 export interface PortSettings {
   proxy_port: number;
@@ -503,13 +545,29 @@ const packagedDesktop = "__TAURI_INTERNALS__" in window
   || window.location.hostname === "tauri.localhost";
 const API_ROOT = "/__byok-api__/api";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let managementSession: Promise<void> | null = null;
+async function ensureManagementSession(): Promise<void> {
+  managementSession ??= fetch(`${API_ROOT}/session`, { headers: { "x-cursor-byok-session": "1" }, credentials: "same-origin" }).then((response) => {
+    if (!response.ok) throw new Error(t("无法连接本地管理服务"));
+  }).catch((cause) => { managementSession = null; throw cause; });
+  return managementSession;
+}
+
+async function requestResponse(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(`${API_ROOT}${path}`, {
+    await ensureManagementSession();
+    const send = () => fetch(`${API_ROOT}${path}`, {
       ...init,
+      credentials: "same-origin",
       headers: init?.body ? { "content-type": "application/json", ...init.headers } : init?.headers,
     });
+    response = await send();
+    if (response.status === 401 && response.headers.get("x-cursor-byok-session") === "required") {
+      managementSession = null;
+      await ensureManagementSession();
+      response = await send();
+    }
   } catch (cause) {
     throw new Error(t("无法连接本地管理服务"), { cause });
   }
@@ -524,12 +582,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(message || `${response.status} ${response.statusText}`);
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await requestResponse(path, init);
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+}
+
+async function download(path: string, defaultName: string): Promise<void> {
+  const response = await requestResponse(path);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/i)?.[1] ?? defaultName;
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    // Give the WebView time to acquire the blob before releasing its URL.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 
 export const api = {
+  connectionDiagnostics: () => request<ConnectionDiagnostics>("/diagnostics/connection"),
+  startConnectionDiagnostic: (scope: "local" | "ssh") => request<ConnectionDiagnostic>("/diagnostics/connection", { method: "POST", body: JSON.stringify({ scope }) }),
+  modelDiagnostics: () => request<ModelDiagnostics>("/diagnostics/models"),
+  testCapability: (model: string, testId: string, capability: ModelCapability) => request<CapabilityResult>(`/models/${encodeURIComponent(model)}/capabilities/${encodeURIComponent(testId)}`, { method: "POST", body: JSON.stringify({ capability }) }),
   models: () => request<Model[]>("/models"),
+  model: (id: string) => request<Model>(`/models/${encodeURIComponent(id)}`),
   createModels: (models: ModelInput[]) => request<Model[]>("/models", { method: "POST", body: JSON.stringify({ models }) }),
   discoverModels: (input: ModelDiscoveryInput) => request<{ models: string[] }>("/models/discover", { method: "POST", body: JSON.stringify(input) }),
   previewV0049Models: () => request<LegacyModelImportPreview>("/models/import-v0049"),
@@ -540,12 +623,12 @@ export const api = {
   deleteModel: (hash: string) => request<void>(`/models/${hash}`, { method: "DELETE" }),
   modelSystemPrompt: (modelId: string) => request<ModelSystemPromptSettings>(`/model-system-prompts?model_id=${encodeURIComponent(modelId)}`),
   setModelSystemPrompt: (modelId: string, settings: ModelSystemPromptSettings) => request<ModelSystemPromptSettings>("/model-system-prompts", { method: "PUT", body: JSON.stringify({ model_id: modelId, ...settings }) }),
-  migrationExportUrl: () => `${API_ROOT}/migration/export`,
+  exportMigration: () => download("/migration/export", "cursor-byok-migration.json"),
   migrationImport: (file: MigrationFile) => request<MigrationResult>("/migration/import", { method: "POST", body: JSON.stringify(file) }),
   testModel: (hash: string, testId: string, signal?: AbortSignal) => request<ModelConnectivityResult>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "POST", signal }),
   cancelModelTest: (hash: string, testId: string) => request<void>(`/models/${encodeURIComponent(hash)}/test/${encodeURIComponent(testId)}`, { method: "DELETE" }),
   overview: (filter?: { startMs: number; endMs: number; modelHashes?: string[]; bucketMs?: number }) => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
     if (filter) {
       params.set("start_ms", String(filter.startMs));
       params.set("end_ms", String(filter.endMs));
@@ -566,7 +649,7 @@ export const api = {
   deletePluginResource: (pluginId: string, resourceType: string, resourceId: string) => request<void>(`/plugins/${encodeURIComponent(pluginId)}/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`, { method: "DELETE" }),
   syncPluginModels: (pluginId: string, providerId: string) => request<{ models: number }>(`/plugins/${encodeURIComponent(pluginId)}/providers/${encodeURIComponent(providerId)}/models/sync`, { method: "POST" }),
   setPluginModelEnabled: (pluginId: string, providerId: string, modelId: string, enabled: boolean) => request<void>(`/plugins/${encodeURIComponent(pluginId)}/providers/${encodeURIComponent(providerId)}/models/enabled`, { method: "PUT", body: JSON.stringify({ modelId, enabled }) }),
-  pluginResourceExportUrl: (servicePort: number, pluginId: string, resourceType: string) => `http://127.0.0.1:${servicePort}${API_ROOT}/plugins/${encodeURIComponent(pluginId)}/resources/${encodeURIComponent(resourceType)}/export`,
+  exportPluginResources: (pluginId: string, resourceType: string) => download(`/plugins/${encodeURIComponent(pluginId)}/resources/${encodeURIComponent(resourceType)}/export`, `${pluginId}-${resourceType}.json`),
   removePluginConfiguration: (pluginId: string) => request<void>(`/plugins/${encodeURIComponent(pluginId)}`, { method: "DELETE" }),
   pluginRuntime: () => request<PluginRuntimeStatus>("/plugins/runtime"),
   initializePluginRuntime: () => request<PluginRuntimeStatus>("/plugins/runtime", { method: "POST" }),
@@ -577,7 +660,7 @@ export const api = {
     await invoke("open_terminal_with_command", { command });
   },
   copyCursorText: async (text: string) => {
-    if (!packagedDesktop) throw new Error(t("请在桌面应用中复制到系统剪贴板"));
+    if (!packagedDesktop) { await navigator.clipboard.writeText(text); return; }
     const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
     await writeText(text);
   },

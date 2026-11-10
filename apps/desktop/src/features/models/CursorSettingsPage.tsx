@@ -109,7 +109,10 @@ export function CursorSettingsPage() {
     setEditing(null);
     magpieImport.start();
   };
-  const openEdit = (model: Model) => {
+  const openEdit = async (listed: Model) => {
+    let model: Model;
+    try { model = await api.model(listed.model_hash); }
+    catch (cause) { message(errorText(cause)); return; }
     setEditing(model);
     setModelOptions([model.model_id]);
     setDraft({
@@ -235,7 +238,10 @@ export function CursorSettingsPage() {
       setBatchTesting(false);
     }
   };
-  const duplicateModel = async (model: Model) => {
+  const duplicateModel = async (listed: Model) => {
+    let model: Model;
+    try { model = await api.model(listed.model_hash); }
+    catch (cause) { message(errorText(cause)); return; }
     const names = new Set(models.map((item) => item.display_name));
     const baseName = t("{name} 副本", { name: model.display_name });
     let displayName = baseName;
@@ -254,7 +260,7 @@ export function CursorSettingsPage() {
   const openGroupSettings = (group: CursorModelGroup) => {
     setGroupNameDraft(group.models.find((model) => model.group_name?.trim())?.group_name?.trim() ?? "");
     setGroupBaseUrlDraft(sharedValue(group.models.map((model) => model.base_url)) ?? "");
-    setGroupApiKeyDraft(sharedValue(group.models.map((model) => model.api_key)) ?? "");
+    setGroupApiKeyDraft("");
     setSettingsGroup(group);
   };
   const deleteGroup = async (group: CursorModelGroup) => {
@@ -283,7 +289,8 @@ export function CursorSettingsPage() {
     const api_key = groupApiKeyDraft.trim();
     setGroupSettingsBusy(true);
     try {
-      for (const model of settingsGroup.models) {
+      for (const listed of settingsGroup.models) {
+        const model = await api.model(listed.model_hash);
         const input: ModelInput = {
           ...modelInput(model),
           group_name,

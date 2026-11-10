@@ -15,24 +15,7 @@ import { useI18n } from "../../i18n/store";
 
 type TimeRange = { startMs: number; endMs: number };
 
-const CALENDAR_DAYS = 365;
-const DAY_MS = 24 * 60 * 60_000;
-
-function contributionCalendarData(overview: Overview, endMs: number) {
-  const tokensByDate = new Map<string, number>();
-  for (const bucket of overview.token_usage_series) {
-    const date = new Date(bucket.bucket_start_ms).toISOString().slice(0, 10);
-    const tokens = bucket.input_tokens + bucket.cache_read_tokens + bucket.cache_write_tokens + bucket.output_tokens;
-    tokensByDate.set(date, (tokensByDate.get(date) ?? 0) + tokens);
-  }
-  const lastDay = new Date(Math.max(0, endMs - 1));
-  lastDay.setUTCHours(0, 0, 0, 0);
-  const firstDayMs = lastDay.getTime() - (CALENDAR_DAYS - 1) * DAY_MS;
-  return Array.from({ length: CALENDAR_DAYS }, (_, offset) => {
-    const date = new Date(firstDayMs + offset * DAY_MS).toISOString().slice(0, 10);
-    return { date, tokens: tokensByDate.get(date) ?? 0 };
-  });
-}
+import { calendarRange, contributionCalendarData } from "./overviewDates";
 
 function presetRange(preset: Exclude<OverviewRangePreset, "custom">, now = new Date()): TimeRange {
   const endMs = now.getTime();
@@ -65,6 +48,8 @@ export function HomePage() {
   const [appliedModels, setAppliedModels] = useState<string[]>([]);
   const [rangeOverview, setRangeOverview] = useState<Overview | null>(null);
   const [rangeBusy, setRangeBusy] = useState(false);
+  const [annualOverview, setAnnualOverview] = useState<Overview | null>(null);
+  const [annualEnd, setAnnualEnd] = useState(Date.now());
   const [refreshVersion, setRefreshVersion] = useState(0);
   const selectedRange = preset === "custom" ? customRange : presetRange(preset);
 
@@ -77,11 +62,22 @@ export function HomePage() {
       modelHashes: appliedModels,
     }).then((next) => {
       if (active) setRangeOverview(next);
+    }).catch((cause) => {
+      if (active) console.error(cause);
     }).finally(() => {
       if (active) setRangeBusy(false);
     });
     return () => { active = false; };
   }, [preset, customRange, overview, refreshVersion, appliedModels]);
+
+  useEffect(() => {
+    let active = true;
+    const end = Date.now();
+    void api.overview({ ...calendarRange(end), modelHashes: appliedModels, bucketMs: 86400000 }).then((next) => {
+      if (active) { setAnnualOverview(next); setAnnualEnd(end); }
+    }).catch((cause) => { if (active) console.error(cause); });
+    return () => { active = false; };
+  }, [overview, refreshVersion, appliedModels]);
 
   const filteredOverview = rangeOverview ?? overview;
   const dailyTokenUsage = filteredOverview.token_usage_series.map((bucket) => ({
@@ -91,7 +87,7 @@ export function HomePage() {
     cacheWriteTokens: bucket.cache_write_tokens,
     outputTokens: bucket.output_tokens,
   }));
-  const contribution = contributionCalendarData(filteredOverview, selectedRange?.endMs ?? Date.now());
+  const contribution = annualOverview ? contributionCalendarData(annualOverview, annualEnd) : [];
   const metrics = {
     llmCalls: filteredOverview.metrics.llm_calls,
     successfulCalls: filteredOverview.metrics.successful_calls,

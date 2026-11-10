@@ -1,28 +1,36 @@
 //! Exposes the local control API.
+mod access;
 mod calls;
+mod capabilities;
+mod diagnostics;
 mod harness;
 mod magpie;
 mod migration;
+#[cfg(test)]
+pub(crate) use migration::MigrationFile;
 mod model_system_prompts;
 mod models;
 mod overview;
 mod plugins;
 mod service;
 mod settings;
+pub(crate) use access::ManagementSession;
+
+pub(crate) fn protect_management_router(router: Router, session: ManagementSession) -> Router {
+    access::protect(router, session)
+}
 
 use axum::{
     body::{to_bytes, Body},
     extract::State,
-    http::{header, header::CONTENT_TYPE, HeaderValue, Method, Request, Response, StatusCode},
+    http::{header, Request, Response, StatusCode},
     routing::{any, get, post, put},
     Router,
 };
-use tower_http::{
-    cors::{AllowOrigin, CorsLayer},
-    services::ServeDir,
-};
-use url::{Host, Url};
+use tower_http::services::ServeDir;
+use url::Url;
 
+pub use diagnostics::Capability;
 pub use service::{
     CallDetail, CallSummary, ControlService, DiscoveredModels, LegacyModelImportPreview,
     LegacyModelImportResult, MagpieImportModel, MagpieImportPreview, ModelConnectivityResult,
@@ -113,7 +121,9 @@ fn proxy_error(error: impl std::fmt::Display) -> Response<Body> {
 }
 
 pub fn api_router(service: ControlService) -> Router {
-    Router::new()
+    let session = service.management_session.clone();
+    let router = Router::new()
+        .route("/__byok-api__/api/session", get(|| async { StatusCode::NO_CONTENT }))
         .route(
             "/__byok-api__/api/models",
             get(models::list).post(models::create),
@@ -130,9 +140,12 @@ pub fn api_router(service: ControlService) -> Router {
             get(model_system_prompts::get).put(model_system_prompts::update),
         )
         .route("/__byok-api__/api/overview", get(overview::get))
+        .route("/__byok-api__/api/diagnostics/connection", get(diagnostics::connection).post(diagnostics::start))
+        .route("/__byok-api__/api/diagnostics/models", get(diagnostics::models))
+        .route("/__byok-api__/api/models/{model_hash}/capabilities/{test_id}", post(diagnostics::test))
         .route(
             "/__byok-api__/api/models/{model_hash}",
-            put(models::update).delete(models::remove),
+            get(models::detail).put(models::update).delete(models::remove),
         )
         .route(
             "/__byok-api__/api/models/{model_hash}/test/{test_id}",
@@ -246,49 +259,6 @@ pub fn api_router(service: ControlService) -> Router {
             put(harness::set_enabled),
         )
         .with_state(service)
-        .layer(desktop_cors())
-}
-
-fn desktop_cors() -> CorsLayer {
-    CorsLayer::new()
-        .allow_origin(AllowOrigin::predicate(|origin, _| local_origin(origin)))
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers([
-            CONTENT_TYPE,
-            header::ACCEPT_LANGUAGE,
-            header::HeaderName::from_static("disable-ad-ids"),
-        ])
-}
-
-fn local_origin(origin: &HeaderValue) -> bool {
-    let Ok(origin) = origin.to_str() else {
-        return false;
-    };
-    if origin.eq_ignore_ascii_case("tauri://localhost") {
-        return true;
-    }
-    let Ok(origin) = Url::parse(origin) else {
-        return false;
-    };
-    if !matches!(origin.scheme(), "http" | "https")
-        || !origin.username().is_empty()
-        || origin.password().is_some()
-        || origin.path() != "/"
-        || origin.query().is_some()
-        || origin.fragment().is_some()
-    {
-        return false;
-    }
-    match origin.host() {
-        Some(Host::Domain(host)) => {
-            host.eq_ignore_ascii_case("localhost") || host.eq_ignore_ascii_case("tauri.localhost")
-        }
-        Some(Host::Ipv4(address)) => {
-            address.is_loopback() || address.is_private() || address.is_link_local()
-        }
-        Some(Host::Ipv6(address)) => {
-            address.is_loopback() || address.is_unique_local() || address.is_unicast_link_local()
-        }
-        None => false,
-    }
+        ;
+    access::protect(router, session)
 }

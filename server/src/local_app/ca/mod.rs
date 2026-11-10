@@ -26,6 +26,8 @@ use super::CaState;
 #[derive(Clone)]
 pub struct CaManager {
     dir: PathBuf,
+    #[cfg(test)]
+    assume_trusted: bool,
 }
 
 pub struct LoadedCa {
@@ -36,6 +38,8 @@ impl CaManager {
     pub fn managed() -> Result<Self> {
         Ok(Self {
             dir: managed_data_dir()?.join("ca"),
+            #[cfg(test)]
+            assume_trusted: false,
         })
     }
 
@@ -60,6 +64,10 @@ impl CaManager {
                 if parse_issuer(&cert, &key).is_err() {
                     return Ok(CaState::Invalid);
                 }
+                #[cfg(test)]
+                if self.assume_trusted {
+                    return Ok(CaState::Ready);
+                }
                 Ok(if is_installed(&cert)? {
                     CaState::Ready
                 } else {
@@ -68,6 +76,11 @@ impl CaManager {
             }
             _ => Ok(CaState::Invalid),
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn assume_trusted_for_test(&mut self) {
+        self.assume_trusted = true;
     }
 
     pub fn load(&self) -> Result<LoadedCa> {

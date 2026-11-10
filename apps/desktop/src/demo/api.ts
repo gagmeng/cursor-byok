@@ -1,6 +1,8 @@
 //! Supplies in-memory management HTTP responses for the desktop demo.
 import type {
   CallDetail,
+  CapabilityResult,
+  ConnectionDiagnostic,
   CursorHarnessStatus,
   ExternalApiSettings,
   LlmCall,
@@ -88,6 +90,7 @@ let harnessStatus: CursorHarnessStatus = {
   settings_applied: true,
   proxy_url: "http://127.0.0.1:54321",
   ca_install_command: null,
+  startup_error: null,
 };
 
 let detailed = true;
@@ -113,6 +116,8 @@ const magpieModels: MagpieImportModel[] = [
   { model_id: "auto/glm-5.3", display_name: "GLM-5.3", provider: "auto", routing_group: true, endpoint: "openai-chat", context_window_tokens: 116_000, max_completion_tokens: 16_000, reasoning_levels: ["low", "high"], existing: false },
 ];
 let storage: StatisticsStorage = { call_count: calls.length, trace_count: calls.length };
+const diagnosticSessions: ConnectionDiagnostic[] = [];
+const capabilityResults: CapabilityResult[] = [];
 
 export function installDemoApi() {
   const nativeFetch = window.fetch.bind(window);
@@ -126,7 +131,30 @@ export function installDemoApi() {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const body = await readBody(input, init);
 
+    if (path === "/session") return new Response(null, {status: 204});
+    if (path === "/plugins") return json([]);
+    if (path === "/plugins/runtime") return json({state:"uninitialized",version:"demo",target:null,phase:null,downloaded_bytes:0,total_bytes:null,error:null});
+    if (path === "/settings/pricing") return json({input_per_million:0,output_per_million:0,cache_read_per_million:0,cache_write_per_million:0});
+    if (path === "/settings/auto-review-model") return json(null);
+    if (path === "/settings/commit") return json({model_id:"",prompt:"",custom_prompt:false});
+    if (path === "/diagnostics/connection" && method === "GET") return json({harness: harnessStatus, configured_models: models.length, sessions: diagnosticSessions});
+    if (path === "/diagnostics/connection" && method === "POST") {
+      const id = crypto.randomUUID();
+      const session: ConnectionDiagnostic = { diagnostic_id:id, scope:(body as {scope:"local"|"ssh"}).scope, marker:`BYOK_DIAGNOSTIC_${id.replaceAll("-","")}`, created_at_ms:Date.now(), request_id:null, conversation_id:null, request_seen_at_ms:null, stream_seen_at_ms:null, upstream_response_at_ms:null, tool_result_at_ms:null, error_message:null };
+      diagnosticSessions.unshift(session);
+      return json(session);
+    }
+    if (path === "/diagnostics/models") return json({health: [], capabilities: capabilityResults});
+    if (/^\/models\/[^/]+\/capabilities\/[^/]+$/.test(path) && method === "POST") {
+      const result: CapabilityResult = {model_id:decodeURIComponent(path.split("/")[2]),capability:(body as {capability:CapabilityResult["capability"]}).capability,status:"passed",tested_at_ms:Date.now(),duration_ms:120,detail:"Demo capability result"};
+      const index=capabilityResults.findIndex(item=>item.model_id===result.model_id && item.capability===result.capability);
+      if(index>=0) capabilityResults.splice(index,1);
+      capabilityResults.push(result);
+      return json(result);
+    }
+    if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) && method === "DELETE") return empty();
     if (path === "/models" && method === "GET") return json(models);
+    if (/^\/models\/[^/]+$/.test(path) && method === "GET") return json(models.find(model => model.model_hash === path.split("/").at(-1)));
     if (path === "/models" && method === "POST") return json(models);
     if (path === "/models/discover") return json({ models: models.map((model) => model.model_id) });
     if (path === "/model-system-prompts" && method === "GET") {

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::Utc;
+use chrono::{Datelike, TimeZone, Utc};
 use sqlx::Row;
 
 use crate::{
@@ -27,6 +27,18 @@ impl Store {
         end_ms: Option<i64>,
         model_hashes: Option<&str>,
         bucket_ms: Option<i64>,
+    ) -> Result<Overview> {
+        self.overview_in_timezone(start_ms, end_ms, model_hashes, bucket_ms, chrono_tz::UTC)
+            .await
+    }
+
+    pub async fn overview_in_timezone(
+        &self,
+        start_ms: Option<i64>,
+        end_ms: Option<i64>,
+        model_hashes: Option<&str>,
+        bucket_ms: Option<i64>,
+        timezone: chrono_tz::Tz,
     ) -> Result<Overview> {
         let call_row = sqlx::query(
             "SELECT
@@ -85,16 +97,66 @@ impl Store {
             output_tokens,
         };
 
+        let maximum_buckets = if start_ms.is_none() && end_ms.is_none() {
+            OVERVIEW_DAYS as i64
+        } else if bucket_ms.is_some() {
+            MAX_EXPLICIT_BUCKETS
+        } else {
+            MAX_RANGE_BUCKETS
+        };
         let (token_usage_granularity, bucket_ms, series_start_ms, bucket_count) =
             token_usage_buckets(start_ms, end_ms, bucket_ms);
+        let bucket_starts = if bucket_ms == DAY_MS {
+            let last = end_ms
+                .unwrap_or_else(|| Utc::now().timestamp_millis())
+                .saturating_sub(1);
+            let date = timezone
+                .timestamp_millis_opt(last)
+                .single()
+                .ok_or_else(|| {
+                    crate::Error::Config("overview end timestamp is outside supported dates".into())
+                })?
+                .date_naive();
+            let first_date = start_ms
+                .and_then(|start| timezone.timestamp_millis_opt(start).single())
+                .map(|date| date.date_naive());
+            let local_count = first_date
+                .map(|first| (date - first).num_days() + 1)
+                .unwrap_or(bucket_count)
+                .clamp(1, maximum_buckets);
+            (0..local_count)
+                .map(|offset| {
+                    let day = date - chrono::Duration::days(local_count - 1 - offset);
+                    timezone
+                        .with_ymd_and_hms(day.year(), day.month(), day.day(), 0, 0, 0)
+                        .earliest()
+                        .or_else(|| {
+                            timezone
+                                .with_ymd_and_hms(day.year(), day.month(), day.day(), 1, 0, 0)
+                                .earliest()
+                        })
+                        .map(|value| value.timestamp_millis())
+                        .ok_or_else(|| {
+                            crate::Error::Config(format!(
+                                "overview calendar day has no start in {timezone}: {day}"
+                            ))
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            (0..bucket_count)
+                .map(|offset| series_start_ms.saturating_add(offset.saturating_mul(bucket_ms)))
+                .collect()
+        };
+        let bounds = bucket_starts.iter().enumerate().map(|(index, start)| serde_json::json!({"start": start, "end": bucket_starts.get(index+1).copied().unwrap_or_else(|| end_ms.unwrap_or_else(|| Utc::now().timestamp_millis()))})).collect::<Vec<_>>();
         let rows = sqlx::query(&format!(
             "SELECT
-                (created_at_ms / {bucket_ms}) * {bucket_ms} AS bucket_start_ms,
+                json_extract(b.value, '$.start') AS bucket_start_ms,
                 COALESCE(SUM({fresh_input}), 0) AS input_tokens,
                 COALESCE(SUM(COALESCE(cache_read_tokens, 0)), 0) AS cache_read_tokens,
                 COALESCE(SUM(COALESCE(cache_write_tokens, 0)), 0) AS cache_write_tokens,
                 COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS output_tokens
-             FROM llm_calls
+             FROM llm_calls JOIN json_each(?) b ON created_at_ms >= json_extract(b.value, '$.start') AND created_at_ms < json_extract(b.value, '$.end')
              WHERE created_at_ms >= ?
                AND (? IS NULL OR created_at_ms < ?)
                AND (? IS NULL OR model_hash IN (SELECT value FROM json_each(?)))
@@ -102,7 +164,8 @@ impl Store {
              ORDER BY bucket_start_ms",
             fresh_input = fresh_input_sql(),
         ))
-        .bind(start_ms.unwrap_or(series_start_ms).max(series_start_ms))
+        .bind(serde_json::to_string(&bounds)?)
+        .bind(start_ms.unwrap_or(*bucket_starts.first().unwrap_or(&series_start_ms)))
         .bind(end_ms)
         .bind(end_ms)
         .bind(model_hashes)
@@ -125,8 +188,8 @@ impl Store {
                 ))
             })
             .collect::<Result<BTreeMap<_, _>>>()?;
-        let token_usage_series = (0..bucket_count)
-            .map(|offset| series_start_ms.saturating_add(offset.saturating_mul(bucket_ms)))
+        let token_usage_series = bucket_starts
+            .into_iter()
             .map(|bucket_start_ms| {
                 recorded
                     .remove(&bucket_start_ms)
@@ -218,4 +281,50 @@ fn saturating_sum(values: &[i64]) -> i64 {
     values
         .iter()
         .fold(0_i64, |total, value| total.saturating_add(*value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn local_midnight_and_dst_days_keep_every_requested_calendar_day() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        for (timezone, start, end, expected_days) in [
+            (
+                chrono_tz::Asia::Shanghai,
+                "2026-11-09T00:00:00+08:00",
+                "2026-11-10T00:15:00+08:00",
+                2,
+            ),
+            (
+                chrono_tz::America::New_York,
+                "2026-03-07T00:00:00-05:00",
+                "2026-03-10T00:00:00-04:00",
+                3,
+            ),
+        ] {
+            let start = chrono::DateTime::parse_from_rfc3339(start)
+                .unwrap()
+                .timestamp_millis();
+            let end = chrono::DateTime::parse_from_rfc3339(end)
+                .unwrap()
+                .timestamp_millis();
+            let overview = store
+                .overview_in_timezone(Some(start), Some(end), None, Some(DAY_MS), timezone)
+                .await
+                .unwrap();
+            assert_eq!(overview.token_usage_series.len(), expected_days);
+            assert_eq!(overview.token_usage_series[0].bucket_start_ms, start);
+            assert!(overview
+                .token_usage_series
+                .iter()
+                .all(|bucket| bucket.bucket_start_ms < end));
+        }
+    }
 }

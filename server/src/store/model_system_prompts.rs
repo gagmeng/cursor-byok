@@ -11,6 +11,20 @@ use crate::{
 use super::{now_ms, Store};
 
 impl Store {
+    pub async fn import_missing_system_prompts(
+        &self,
+        configs: &[ModelSystemPromptConfig],
+    ) -> Result<()> {
+        ModelSystemPromptConfig::validate_all(configs)?;
+        let mut session = self.write_session().await?;
+        let mut tx = session.begin().await?;
+        for config in configs {
+            insert_missing(&mut tx, config).await?;
+        }
+        tx.commit().await?;
+        session.committed();
+        Ok(())
+    }
     pub async fn conversation_system_prompt(
         &self,
         conversation_id: &ConversationId,
@@ -233,31 +247,20 @@ fn settings_from_row(row: sqlx::sqlite::SqliteRow) -> Result<ModelSystemPromptSe
     Ok(settings)
 }
 
-pub(super) async fn rekey(
-    transaction: &mut SqliteConnection,
-    previous: &str,
-    current: &str,
-) -> Result<()> {
-    if previous == current {
-        return Ok(());
-    }
-    sqlx::query("UPDATE model_system_prompts SET model_id = ? WHERE model_id = ?")
-        .bind(current)
-        .bind(previous)
-        .execute(&mut *transaction)
-        .await?;
-    sqlx::query("UPDATE conversation_system_prompts SET model_id = ? WHERE model_id = ?")
-        .bind(current)
-        .bind(previous)
-        .execute(&mut *transaction)
-        .await?;
-    Ok(())
-}
-
 pub(super) async fn remove(transaction: &mut SqliteConnection, model_id: &str) -> Result<()> {
     sqlx::query("DELETE FROM model_system_prompts WHERE model_id = ?")
         .bind(model_id)
         .execute(transaction)
         .await?;
+    Ok(())
+}
+
+pub(super) async fn insert_missing(
+    tx: &mut SqliteConnection,
+    config: &ModelSystemPromptConfig,
+) -> Result<()> {
+    sqlx::query("INSERT INTO model_system_prompts(model_id, enabled, content, position, updated_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(model_id) DO NOTHING")
+        .bind(&config.model_id).bind(config.settings.enabled).bind(&config.settings.content)
+        .bind(config.settings.position.as_str()).bind(now_ms()).execute(tx).await?;
     Ok(())
 }

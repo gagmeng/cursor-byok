@@ -38,11 +38,32 @@ async fn control_router(store: &Store) -> Router {
 }
 
 async fn request(router: Router, method: &str, path: &str, body: Value) -> (StatusCode, Value) {
+    let session = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/__byok-api__/api/session")
+                .header("host", "127.0.0.1:3000")
+                .header("x-cursor-byok-session", "1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cookie = session.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
     let response = router
         .oneshot(
             Request::builder()
                 .method(method)
                 .uri(path)
+                .header("host", "127.0.0.1:3000")
+                .header("cookie", cookie)
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),

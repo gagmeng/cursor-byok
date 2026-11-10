@@ -184,6 +184,16 @@ pub async fn append(
     request: DecodedAppend,
     parent: Option<TransportParent>,
 ) -> Result<ai::BidiAppendResponse> {
+    if let Some(conversation) = request.conversation_id() {
+        registry
+            .store()
+            .observe_diagnostic_request(
+                &request.request_id,
+                conversation,
+                &request.message.encode_to_vec(),
+            )
+            .await?;
+    }
     let replace_closing = request.model_id().is_some();
     let handle = registry
         .get_or_create_for_append(&request.request_id, replace_closing)

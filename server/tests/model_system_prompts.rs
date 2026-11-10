@@ -53,11 +53,32 @@ async fn control_router(store: &Store) -> Router {
 }
 
 async fn request(router: Router, method: &str, path: &str, body: Value) -> (StatusCode, Value) {
+    let session = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/__byok-api__/api/session")
+                .header("host", "127.0.0.1:3000")
+                .header("x-cursor-byok-session", "1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cookie = session.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
     let response = router
         .oneshot(
             Request::builder()
                 .method(method)
                 .uri(path)
+                .header("host", "127.0.0.1:3000")
+                .header("cookie", cookie)
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
@@ -247,7 +268,7 @@ async fn renaming_a_model_preserves_its_settings_and_adopted_snapshot() {
         .unwrap();
     input.display_name = "renamed model".into();
     let renamed = store.update_model(&model.model_hash, &input).await.unwrap();
-    assert_ne!(renamed.model_hash, model.model_hash);
+    assert_eq!(renamed.model_hash, model.model_hash);
     assert_eq!(
         store
             .model_system_prompt(&renamed.model_hash)
@@ -633,7 +654,7 @@ async fn portable_configuration_round_trips_model_system_prompts() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        file["version"], 2,
+        file["version"], 3,
         "the configuration format must include system prompts"
     );
     assert_eq!(file["model_system_prompts"][0]["content"], settings.content);
@@ -653,6 +674,79 @@ async fn portable_configuration_round_trips_model_system_prompts() {
             .unwrap(),
         settings,
         "configuration import must preserve the prompt and position"
+    );
+}
+
+#[tokio::test]
+async fn migration_keeps_stable_identities_fallbacks_and_existing_prompts() {
+    use cursor_server::model::{ModelSystemPromptSettings, SystemPromptPosition};
+    let (_dir, source) = fixtures::temp_store().await;
+    let mut input = model_input();
+    let backup = source.create_model(&input).await.unwrap();
+    input.display_name = "primary".into();
+    input.fallback_model_hash = Some(backup.model_hash.clone());
+    let primary = source.create_model(&input).await.unwrap();
+    input.display_name = "renamed primary".into();
+    source
+        .update_model(&primary.model_hash, &input)
+        .await
+        .unwrap();
+    let prompt = ModelSystemPromptSettings {
+        enabled: true,
+        content: "source".into(),
+        position: SystemPromptPosition::After,
+    };
+    source
+        .set_model_system_prompt(&primary.model_hash, &prompt)
+        .await
+        .unwrap();
+    let (_, bundle) = request(
+        control_router(&source).await,
+        "GET",
+        "/__byok-api__/api/migration/export",
+        json!({}),
+    )
+    .await;
+    assert!(bundle["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|model| model["fallback_model_hash"] == backup.model_hash));
+    let (_dir2, destination) = fixtures::temp_store().await;
+    let router = control_router(&destination).await;
+    let (status, _) = request(
+        router.clone(),
+        "POST",
+        "/__byok-api__/api/migration/import",
+        bundle.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        destination
+            .model(&primary.model_hash)
+            .await
+            .unwrap()
+            .unwrap()
+            .fallback_model_hash,
+        Some(backup.model_hash)
+    );
+    let local = ModelSystemPromptSettings {
+        content: "destination".into(),
+        ..prompt
+    };
+    destination
+        .set_model_system_prompt(&primary.model_hash, &local)
+        .await
+        .unwrap();
+    let (status, _) = request(router, "POST", "/__byok-api__/api/migration/import", bundle).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        destination
+            .model_system_prompt(&primary.model_hash)
+            .await
+            .unwrap(),
+        local
     );
 }
 

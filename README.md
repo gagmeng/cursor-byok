@@ -33,17 +33,24 @@ This repository, [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok), 
 - **Agent loop:** tool calling, Skills, MCP, subagents, and multi-turn history.
 - **Local store:** SQLite checkpoints, startup pruning of dead lineages, and a one-file device migration export.
 - **Operations UI:** model editor, connection tests, token/cache metrics, plugins, and system settings.
+- **First-use setup and connection diagnostics:** configure the CA, models, and takeover, with separate local and SSH evidence for incoming requests, response subscriptions, upstream responses, and tool round trips.
+- **Model health and capability tests:** inspect real calls from the last seven days and actively test streaming, tools, vision, and cached context continuation.
 - **Desktop app:** macOS, Windows, and Linux, with in-app updates from this repository's GitHub Releases.
 
 ## Quick start
 
 1. Download the latest build for your OS from [GitHub Releases](https://github.com/zkldwxz/cursor-byok/releases/latest).
-2. Open cursor-byok → **Cursor**, and initialize the local CA when prompted.
+2. Open cursor-byok → **Connection diagnostics** and follow setup to initialize and trust the local CA. Fresh configurations open this page automatically; setup can be deferred.
 3. Open **Model Settings**, add a model (server URL, API key, model ID), save, and run **Test**.
 4. Keep cursor-byok running.
 5. After the first install, or after upgrading Cursor, **quit Cursor completely**, start it again, open a **new** chat, and pick the model you configured — not **Auto**.
+6. Return to **Connection diagnostics**, start local verification, and send the generated instruction in a new Cursor chat. Each stage records its own evidence: request arrival, response subscription, valid upstream response, and terminal tool result.
 
 Existing chats opened before the first successful connection will not pick up the local backend.
+
+**Model health** shows recent real-call statistics and each model's last capability results. Tests call the selected provider and may consume quota: all four tests use at most six requests, with a 90-second limit per test and cancellation support. The tool capability test uses a simulated result; connection diagnostics ask Cursor to run an actual terminal `echo`. Cache continuation without a reported cache hit is shown as inconclusive.
+
+Device migration uses version 3 files, preserving stable model IDs, fallback links, system prompts, and plugin credentials. Existing identities are skipped. Export a new migration file after upgrading. Automatic backups run at startup and then daily, retaining the newest seven files in `backups/` under the app's data directory.
 
 ## Remote SSH
 
@@ -71,6 +78,8 @@ Tool execution remains in the SSH workspace.
 This route requires **no SSH tunnel and no local CA installation on the remote host**. Keep the local service bound to loopback; do not expose it publicly or copy CA private keys to the remote host.
 
 The application's **Local: on/off** labels describe local proxy configuration only. Neither those labels nor a successful local model test verifies Remote SSH. Agent streaming, remote file and terminal tools, search, WebFetch, MCP, Skills, Tab, and commit generation must be checked separately; this setup guide is not a claim that every feature has passed end-to-end SSH testing. See the [Remote SSH verification checklist](./docs/remote-ssh.md).
+
+After setup, start SSH verification in **Connection diagnostics** and send its independent instruction in a new chat in the corresponding SSH window. Local and SSH records remain separate. You select the window type; the app does not automatically identify the remote host. A successful terminal round trip verifies this diagnostic path; use the checklist for other remote features.
 
 ### Troubleshooting Remote SSH
 

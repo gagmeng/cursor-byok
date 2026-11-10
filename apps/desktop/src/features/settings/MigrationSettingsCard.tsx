@@ -5,6 +5,8 @@ import { ConfirmDialog } from "../../shared/ui/ConfirmDialog";
 import { TitledCard } from "../../shared/ui/TitledCard";
 import { useMessage } from "../../shared/ui/message";
 import styles from "./MigrationSettingsCard.module.scss";
+import { parseMigrationFile } from "./migrationFile";
+import { appStore } from "../../shared/store/appStore";
 
 /**
  * Moves a device's configuration — model entries with their keys and plugin
@@ -16,16 +18,18 @@ export function MigrationSettingsCard() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<MigrationFile | null>(null);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const importLock = useRef(false);
 
-  const exportFile = () => {
-    // The endpoint answers with Content-Disposition, so the browser saves it.
-    const link = document.createElement("a");
-    link.href = api.migrationExportUrl();
-    link.download = "";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    message(t("已开始导出，请选择保存位置"));
+  const exportFile = async () => {
+    setExporting(true);
+    try {
+      await api.exportMigration();
+    } catch (cause) {
+      message(errorText(cause));
+    } finally {
+      setExporting(false);
+    }
   };
 
   const pickFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -33,11 +37,7 @@ export function MigrationSettingsCard() {
     event.target.value = "";
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text()) as MigrationFile;
-      if (parsed?.format !== "cursor-byok-migration") {
-        message(t("这不是 cursor-byok 的迁移文件"));
-        return;
-      }
+      const parsed = parseMigrationFile(await file.text());
       setPending(parsed);
     } catch {
       message(t("迁移文件无法读取，可能已损坏"));
@@ -45,15 +45,18 @@ export function MigrationSettingsCard() {
   };
 
   const confirmImport = async () => {
-    if (!pending) return;
+    if (!pending || importLock.current) return;
+    importLock.current = true;
     try {
       setImporting(true);
       const result = await api.migrationImport(pending);
+      await appStore.refresh();
       setPending(null);
       message(summary(result));
     } catch (cause) {
       message(errorText(cause));
     } finally {
+      importLock.current = false;
       setImporting(false);
     }
   };
@@ -65,7 +68,7 @@ export function MigrationSettingsCard() {
           <strong>{t("导出配置")}</strong>
           <small>{t("把模型配置（含 API Key）和插件凭证打包成一个文件。文件包含密钥，请妥善保存。")}</small>
         </div>
-        <Button variant="secondary" onClick={exportFile}>{t("导出")}</Button>
+        <Button variant="secondary" disabled={exporting} onClick={() => void exportFile()}>{t("导出")}</Button>
       </div>
       <div className={styles.row}>
         <div className={styles.description}>
@@ -81,6 +84,7 @@ export function MigrationSettingsCard() {
 
     <ConfirmDialog
       open={pending !== null}
+      busy={importing}
       title={t("导入迁移文件")}
       cancelLabel={t("取消")}
       confirmLabel={importing ? t("导入中…") : t("导入")}

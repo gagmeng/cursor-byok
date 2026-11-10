@@ -32,14 +32,15 @@ use crate::{
 
 #[derive(Clone)]
 pub struct ControlService {
-    store: Store,
-    cursor_harness: CursorHarness,
-    provider: Arc<dyn Provider>,
+    pub(crate) management_session: super::access::ManagementSession,
+    pub(super) store: Store,
+    pub(super) cursor_harness: CursorHarness,
+    pub(super) provider: Arc<dyn Provider>,
     plugin_runtime: PluginRuntime,
-    plugins: PluginRegistry,
+    pub(super) plugins: PluginRegistry,
     clients: crate::network::NetworkClients,
     app_version: String,
-    model_tests: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
+    pub(super) model_tests: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -79,12 +80,12 @@ pub struct MagpieImportModel {
 /// 导入前要知道哪些已经配置过。判定键必须与 `create_models_if_missing`
 /// 的冲突键一致,否则预览说"新增"、导入却跳过。
 async fn existing_model_hashes(store: &Store) -> Result<std::collections::HashSet<String>> {
-    Ok(store
+    store
         .models()
         .await?
         .into_iter()
-        .map(|model| model.model_hash)
-        .collect())
+        .map(|model| model_hash(&ModelConfigInput::from(&model)))
+        .collect::<Result<std::collections::HashSet<_>>>()
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -186,6 +187,7 @@ impl ControlService {
         app_version: String,
     ) -> Result<Self> {
         Ok(Self {
+            management_session: Default::default(),
             cursor_harness: CursorHarness::new(store.clone())?,
             store,
             provider,
@@ -268,7 +270,10 @@ impl ControlService {
             .models()
             .await?
             .iter()
-            .map(crate::model::ModelConfigInput::from)
+            .map(|model| super::migration::MigrationModel {
+                model_hash: model.model_hash.clone(),
+                config: model.into(),
+            })
             .collect();
         let mut plugin_resources = Vec::new();
         for plugin in self.plugins.plugins().await {
@@ -325,7 +330,15 @@ impl ControlService {
         }
         crate::model::ModelSystemPromptConfig::validate_all(&file.model_system_prompts)?;
         let models_total = file.models.len();
-        let models_added = self.store.create_models_if_missing(&file.models).await?;
+        let imported = file
+            .models
+            .iter()
+            .map(|model| (model.model_hash.clone(), model.config.clone()))
+            .collect::<Vec<_>>();
+        let models_added = self
+            .store
+            .import_model_configuration(&imported, &file.model_system_prompts)
+            .await?;
         let mut resources_added = 0;
         let mut resources_updated = 0;
         let mut warnings = Vec::new();
@@ -338,7 +351,7 @@ impl ControlService {
             }]);
             match self
                 .plugins
-                .import_resources(&group.plugin_id, &group.resource_type, files)
+                .import_missing_resources(&group.plugin_id, &group.resource_type, files)
                 .await
             {
                 Ok(response) => {
@@ -362,7 +375,9 @@ impl ControlService {
                 )),
             }
         }
-        self.store.set_model_system_prompts(&prompts).await?;
+        // Prompts and model references have already committed atomically.
+        // Plugin prompts become eligible only after their resources are imported.
+        self.store.import_missing_system_prompts(&prompts).await?;
         Ok(MigrationResult {
             models_added,
             models_total,
@@ -459,9 +474,14 @@ impl ControlService {
         end_ms: Option<i64>,
         model_hashes: Option<&str>,
         bucket_ms: Option<i64>,
+        timezone: Option<&str>,
     ) -> Result<Overview> {
+        let timezone: chrono_tz::Tz = timezone
+            .unwrap_or("UTC")
+            .parse()
+            .map_err(|_| Error::Config("overview timezone must be an IANA timezone".into()))?;
         self.store
-            .overview(start_ms, end_ms, model_hashes, bucket_ms)
+            .overview_in_timezone(start_ms, end_ms, model_hashes, bucket_ms, timezone)
             .await
     }
 
@@ -649,21 +669,25 @@ impl ControlService {
     pub async fn discover_models(&self, input: &ModelDiscoveryInput) -> Result<DiscoveredModels> {
         let client = self.clients.default_client().await?;
         let base_url = crate::model::normalize_request_url(&input.base_url)?;
-        discover_models_from_endpoint(
-            &client,
-            match input.model_type {
-                ModelType::OpenAi => ProviderType::OpenAiResponses,
-                ModelType::Anthropic => ProviderType::Anthropic,
-            },
-            &base_url,
-            &input.api_key,
-            if input.custom_headers_enabled {
-                &input.custom_headers
-            } else {
-                empty_json_object_ref()
-            },
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            discover_models_from_endpoint(
+                &client,
+                match input.model_type {
+                    ModelType::OpenAi => ProviderType::OpenAiResponses,
+                    ModelType::Anthropic => ProviderType::Anthropic,
+                },
+                &base_url,
+                &input.api_key,
+                if input.custom_headers_enabled {
+                    &input.custom_headers
+                } else {
+                    empty_json_object_ref()
+                },
+            ),
         )
         .await
+        .map_err(|_| Error::Provider("model discovery exceeded 30 seconds".into()))?
     }
 
     pub async fn magpie_models(&self, address: Option<&str>) -> Result<MagpieImportPreview> {
