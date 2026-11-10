@@ -1,50 +1,42 @@
 请从下方附件下载对应平台的安装包；Windows 同时提供便携版 ZIP。
 
-## 首次使用与完整连接诊断
+## 桌面界面与配色
 
-- 新增“连接诊断”页，引导完成本地 CA、模型配置和 Cursor 接管；首次使用自动进入，也可稍后完成。
-- 本地与 Remote SSH 分别生成诊断指令，逐项展示 Cursor 请求到达、响应订阅、上游有效响应和成功工具结果。直接模型测试不会误报完整链路已接通。
-- SSH 窗口类型由用户选择，诊断不自动识别远程主机；终端往返验证与 Tab、Commit、MCP 等功能的验证独立。
+- 统一深浅主题的配色与表面层次，增强主蓝色、成功绿色和警告琥珀色；主按钮白字对比度超过 5:1。
+- 导航统一为同族单色图标，当前页面使用蓝色选中背景与左侧标记；保留 Cursor 和模型提供商的品牌标识。
+- 统一按钮、输入框、选择器、卡片和弹窗的尺寸、圆角、间距与标题字重，协调模型、插件、设置及调用详情页面的视觉。
+- 连接诊断与能力测试突出主操作，成功、失败和等待状态通过状态点与文字同时表达；弹窗取消与保存使用不同的按钮层级。
 
-## 模型健康与能力测试
+## 小窗口与键盘操作
 
-- 新增“模型健康”页，展示最近 7 天实际调用的成功率、首个有效响应耗时、生成速度和最近错误；测试、取消及进行中的调用不影响健康成功率。
-- 支持流式响应、工具调用往返、图片理解、缓存续接测试，保存最后结果并支持取消。全部能力最多发送 6 次请求，每项最长 90 秒，可能消耗提供商额度。
-- 工具能力测试使用模拟结果，不执行工作区工具；缓存续接成功但未报告命中时显示“未能确认”。
-- 模型下拉菜单加宽，完整显示长模型名和供应商分组，支持换行及窗口边界适配；修复嵌套菜单的 Escape 行为。
+- 概览在窄窗口使用时间范围选择框，保留全部预设、自定义日期与模型多选，避免筛选栏遮挡标题。
+- 自定义筛选打开后自动进入输入框，关闭后将焦点返回可见触发器；Escape 按层级关闭模型菜单和筛选面板。
+- 窗口跨宽窄布局缩放时重新定位筛选浮层，保留 V1.1.3 的长模型名换行、供应商分组、加宽菜单和窗口边界适配。
+- 保持固定窗口栏、导航和页面操作区，滚动仅发生在原有内容视口内。
 
-## 可靠性与配置保护
+## 图表与可读性
 
-- 修复闲置会话清理后无法恢复；保留当前会话头和祖先，修复旧数据中的悬空引用。
-- 模型改名、换密钥或改地址保留稳定身份及备用、Commit、审核和历史调用关联；拒绝不存在、环形及超过四跳的备用链，阻止删除仍被引用的模型。
-- 静默启动按持久设置恢复接管；状态查询只读，刷新不再修改 Cursor 配置或强制退出 Cursor。
-- 接管前记录原始代理及路由设置，关闭或退出时按所有权恢复，并保留用户期间修改。
-- 管理接口增加同源会话鉴权，收紧 Host/Origin；模型列表不再返回 API Key 和自定义 Header 值。导出改为应用内鉴权下载，并支持服务重启后的会话恢复。
+- 增强 Token 用量图、缓存仪表和年度热力图的色彩辨识度，保留全部统计口径与数据系列。
+- 修复切换主题后 Canvas 图表继续使用旧配色的问题，缓存中的页面也会随主题重绘。
+- 补齐成功状态的主题颜色，改善说明文字对比度和键盘焦点可见性。
+- 支持系统“减少动态效果”偏好，控件减少过渡、图表关闭动画。
 
-## 备份、迁移与界面修复
+## 验证与升级
 
-- 应用启动即创建原子备份，随后每日执行，失败后重试，保留最近 7 份。
-- 设备迁移保留模型身份、备用关系、提示词和插件凭证，跳过已有配置；修复并发插件导入丢失账号。
-- 迁移文件在预览前校验，导入期间阻止重复提交，成功后刷新模型和插件列表。
-- 修复局部接口失败导致全部数据不显示、旧刷新覆盖新结果，以及年度热力图查询范围和本地时区错误。
-- CI 纳入前端逻辑、隔离浏览器和全部内置插件测试。本地回归通过：466 项 Rust、38 项前端逻辑、23 项浏览器交互、62 项插件及 8 项发布脚本测试。
-
-## 升级说明
-
-- 数据库从 schema 12 自动前向迁移至 14；真实数据库副本验证业务行数保持一致、无外键违规。
-- 设备迁移文件使用版本 3，旧版本文件不再导入。跨设备迁移前，请先升级并重新导出配置。
-- 保持本机 cursor-byok 运行。首次接管或升级 Cursor 后，请自行完全退出并重启 Cursor，再新建对话验证。
-- 验证覆盖隔离 HTTP/协议链路和浏览器交互；真实 SSH、各提供商能力和其他平台静默自启仍需在对应环境验收。
+- 本地回归通过：466 项 Rust 测试、38 项前端逻辑测试、30 项隔离浏览器测试；格式检查、Clippy、前端类型检查、三种语言完整性和 Windows 调试及优化构建通过。
+- 新增 7 项界面与交互回归，覆盖深浅主题、中文/英文/葡萄牙文、最小窗口、焦点恢复、嵌套筛选、窗口缩放和图表主题切换。
+- 本版本以桌面界面与交互优化为主，沿用 V1.1.3 的数据库 schema 14 和设备迁移文件版本 3；现有模型配置、连接诊断和能力测试继续可用。
+- 发布附件与 V1.1.3 保持相同平台范围：Windows、macOS Intel/Apple Silicon、Linux，以及签名更新文件和自动更新清单。
 
 ---
 
 ## English summary
 
-- **Setup and connection diagnostics:** guided CA/model/takeover setup, with independent local and SSH request, stream, provider-response, and tool-result evidence.
-- **Model health and capability probes:** seven-day real-call statistics plus cancellable streaming, tool-result continuation, vision, and cache tests. All tests use at most six provider requests; cache support remains inconclusive without a reported hit.
-- **Reliable conversations and model references:** preserve idle conversation lineages and stable model identities; validate fallback targets, cycles, and depth; protect referenced models from deletion.
-- **Safe takeover lifecycle:** restore persisted intent without opening a window, keep status reads side-effect free, and restore only settings still owned by the app.
-- **Management access and exports:** same-origin sessions, redacted model lists, authenticated in-app downloads, and automatic session recovery after a service restart.
-- **Backups and migration:** immediate atomic startup backup, seven-file retention, complete fallback/prompt/credential migration, and concurrent plugin-import protection.
-- **Desktop fixes:** wider wrapping model menus, nested-menu dismissal, independent refresh results, validated imports, and complete annual statistics using the local calendar.
-- **Upgrade:** schema 12 upgrades to 14 automatically. Portable configuration files now use version 3; upgrade and export a new file before moving configuration between machines.
+- **Desktop appearance:** stronger blue accents, clearer light/dark surface layers, consistent controls and spacing, monochrome navigation icons, and explicit selected-page indicators.
+- **Diagnostics and actions:** readable status dots and labels, prominent connection/capability actions, and distinct cancel/save button hierarchy.
+- **Compact windows and keyboard use:** all overview ranges and model filters remain available; custom filters receive focus, restore it on dismissal, and reposition when the window crosses layout breakpoints.
+- **Charts and accessibility:** token, cache, and annual charts use clearer colors, repaint after theme changes even on cached pages, and respect reduced-motion preferences.
+- **Validation:** 466 Rust tests, 38 frontend logic tests, and 30 isolated browser tests passed locally, alongside formatting, Clippy, type/build, localization, and Windows debug/optimized builds.
+- **Upgrade:** retains V1.1.3's schema 14 and configuration export format 3, with the same platform packages and signed updater formats.
+
+设计方法参考 [unslop by Damir Sokolovsky](https://github.com/heydamir/unslop)，CC BY 4.0。

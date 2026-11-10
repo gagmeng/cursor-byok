@@ -34,7 +34,7 @@ export function ModelHealthPage() {
   return <>
     <PageActions>
       <div className={styles.modelSelect}><ModelSelect mode="single" value={selected} options={options} onChange={(model) => setParams({model})} label={t("选择模型")} disabled={!!active || batch} /></div>
-      <Button disabled={!selected || !!active || batch} onClick={() => void testAll()}>{batch ? t("测试中…") : t("测试全部能力")}</Button>
+      <Button variant="primary" disabled={!selected || !!active || batch} onClick={() => void testAll()}>{batch ? t("测试中…") : t("测试全部能力")}</Button>
     </PageActions>
     <PageContent title={<span className={styles.pageTitle}>{t("模型健康")}</span>} sections={[
       {key:"health",estimatedHeight:220,content:<Card className={styles.panel}>
@@ -58,7 +58,7 @@ export function ModelHealthPage() {
         const running=active?.capability===capability;
         const state=running ? "running" : result?.status ?? "untested";
         return {key:capability,estimatedHeight:170,content:<Card className={styles.panel}>
-          <div className={styles.resultHeader}><strong>{labels[capability]}</strong><span data-state={state}>{running ? t("测试中…") : !result ? t("未测试") : result.status==="passed" ? t("通过") : result.status==="failed" ? t("失败") : result.status==="cancelled" ? t("已取消") : t("未能确认")}</span><Button variant="secondary" disabled={!selected || (running ? active.cancelling : !!active || batch)} onClick={() => void (running ? diagnosticsStore.cancel(selected) : diagnosticsStore.test(selected,capability))}>{running ? active.cancelling ? t("取消中…") : t("取消测试") : t("运行测试")}</Button></div>
+          <div className={styles.resultHeader}><strong>{labels[capability]}</strong><span className={styles.status} data-state={state}>{running ? t("测试中…") : !result ? t("未测试") : result.status==="passed" ? t("通过") : result.status==="failed" ? t("失败") : result.status==="cancelled" ? t("已取消") : t("未能确认")}</span><Button variant="secondary" disabled={!selected || (running ? active.cancelling : !!active || batch)} onClick={() => void (running ? diagnosticsStore.cancel(selected) : diagnosticsStore.test(selected,capability))}>{running ? active.cancelling ? t("取消中…") : t("取消测试") : t("运行测试")}</Button></div>
           <small>{descriptions[capability]}</small>
           {result && <><p className={result.status==="failed" ? styles.error : undefined}>{result.detail}</p><small>{new Date(result.tested_at_ms).toLocaleString()} · {result.duration_ms} ms</small></>}
         </Card>};

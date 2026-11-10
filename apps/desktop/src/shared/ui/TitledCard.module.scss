@@ -6,22 +6,22 @@
 
   .header {
     position: relative;
-    min-height: 36px;
+    min-height: 40px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 10px;
+    padding: 4px 16px;
     border-bottom: 1px solid var(--vscode-sideBar-border);
   }
 
   .title {
     margin: 0;
     font-size: type.$font-size-base;
-    font-weight: 630;
+    font-weight: 500;
   }
 
   pre {
-    margin: 14px;
+    margin: 16px;
     padding: 12px;
     overflow-wrap: anywhere;
     white-space: pre-wrap;

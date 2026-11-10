@@ -8,7 +8,7 @@
   padding: 4px;
   background: var(--vscode-dropdown-background);
   border: 1px solid var(--vscode-dropdown-border);
-  border-radius: 6px;
+  border-radius: var(--oa-overlay-radius);
   box-shadow: var(--oa-dropdown-shadow);
 
   button,

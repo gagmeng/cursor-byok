@@ -2,18 +2,18 @@
 
 .root {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
 
   input {
     width: 100%;
-    height: 32px;
-    padding: 0 9px;
+    height: var(--oa-control-height);
+    padding: 0 12px;
     color: var(--vscode-input-foreground);
     background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border);
-    border-radius: 5px;
+    border-radius: var(--oa-control-radius);
     outline: 0;
 
     &:focus {

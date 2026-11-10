@@ -24,10 +24,11 @@
   position: absolute;
   z-index: 21;
 
-  top: 0;
+  top: calc((var(--window-safe-top) - var(--app-content-top)) / 2);
   margin: 0;
   padding-left: 0;
-  font-size: type.$font-size-xxl;
-  font-weight: bolder;
-  transform: translateY(-150%);
+  font-size: type.$font-size-base;
+  font-weight: 500;
+  line-height: 24px;
+  transform: translateY(-50%);
 }

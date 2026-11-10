@@ -3,6 +3,7 @@ import { init, Rect, type ElementEvent } from "zrender";
 import type { Locale } from "../../../i18n/runtime";
 import { useI18n } from "../../../i18n/store";
 import { useTooltip, type TooltipAnchor } from "../../../shared/ui/Tooltip";
+import { useChartAppearance } from "../../../shared/theme/useChartAppearance";
 import styles from "./ContributionCalendarChart.module.scss";
 
 export type ContributionDay = {
@@ -34,17 +35,10 @@ type AxisLabel = {
   left: number;
 };
 
-const levelColors = [
-  "rgba(139, 148, 158, 0.20)",
-  "#9be9a8",
-  "#40c463",
-  "#30a14e",
-  "#216e39",
-];
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const CALENDAR_CONFIG = {
   cellAspectRatio: 0.9,
-  cellGap: 3,
+  cellGap: 4,
   resizeTransitionMs: 180,
   rowCount: 7,
   axisLabelGap: 8,
@@ -94,12 +88,15 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
   const scrollerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<ReturnType<typeof buildCalendarLayout>>(null);
+  const appearance = useChartAppearance();
+  const appearanceRef = useRef(appearance);
   const scheduleDrawRef = useRef<() => void>(() => undefined);
   const { show: showTooltip, hide: hideTooltip } = useTooltip();
   const [axisLabels, setAxisLabels] = useState<AxisLabel[]>([]);
   const layout = useMemo(() => buildCalendarLayout(data, locale), [data, locale]);
   const tokenFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   layoutRef.current = layout;
+  appearanceRef.current = appearance;
 
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
@@ -140,11 +137,13 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
     let lastAvailableWidth = -1;
     let lastCanvasHeight = -1;
     let lastLayout: typeof layout = null;
+    let lastAppearance: typeof appearance | null = null;
     const draw = () => {
       const currentLayout = layoutRef.current;
+      const currentAppearance = appearanceRef.current;
       if (!currentLayout) return;
       const availableWidth = Math.floor(scroller.getBoundingClientRect().width);
-      if (availableWidth <= 0 || (availableWidth === lastAvailableWidth && currentLayout === lastLayout)) return;
+      if (availableWidth <= 0 || (availableWidth === lastAvailableWidth && currentLayout === lastLayout && currentAppearance === lastAppearance)) return;
       const gapsWidth = (currentLayout.columnCount - 1) * CALENDAR_CONFIG.cellGap;
       const cellWidth = Math.max(0, (availableWidth - gapsWidth) / currentLayout.columnCount);
       const cellHeight = cellWidth / CALENDAR_CONFIG.cellAspectRatio;
@@ -172,6 +171,7 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
         lastCanvasHeight = height;
       }
       lastLayout = currentLayout;
+      lastAppearance = currentAppearance;
 
       const currentDates = new Set(currentLayout.cells.map((cell) => cell.date));
       for (const [date, rect] of cellRects) {
@@ -204,8 +204,8 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
           current.extra = extra;
           current.stopAnimation();
           current.animateTo(
-            { shape, style: { fill: levelColors[cell.level] } },
-            { duration: CALENDAR_CONFIG.resizeTransitionMs, easing: "cubicOut" },
+            { shape, style: { fill: currentAppearance.calendar[cell.level] } },
+            { duration: currentAppearance.reducedMotion ? 0 : CALENDAR_CONFIG.resizeTransitionMs, easing: "cubicOut" },
           );
           continue;
         }
@@ -213,9 +213,7 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
         const rect = new Rect({
           shape,
           style: {
-            fill: levelColors[cell.level],
-            stroke: "rgba(139, 148, 158, 0.10)",
-            lineWidth: 1,
+            fill: currentAppearance.calendar[cell.level],
           },
           cursor: "default",
           extra,
@@ -244,7 +242,7 @@ export function ContributionCalendarChart({ data }: ContributionCalendarChartPro
 
   useLayoutEffect(() => {
     scheduleDrawRef.current();
-  }, [layout]);
+  }, [appearance, layout]);
 
   if (!layout) return null;
 

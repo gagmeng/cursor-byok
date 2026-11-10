@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { TokenUsageGranularity } from "../../../shared/api";
 import { formatCompactInteger } from "../../../shared/utils/numberFormat";
 import { EChart } from "./EChart";
+import { useChartAppearance } from "../../../shared/theme/useChartAppearance";
 import styles from "./DailyTokenUsageChart.module.scss";
 
 export type DailyTokenUsage = {
@@ -17,14 +18,6 @@ type TooltipItem = {
   dataIndex: number;
 };
 
-const seriesColors = {
-  input: "#0091ff",
-  cacheRead: "#40c463",
-  cacheWrite: "#3A62BA",
-  output: "#E7B40B",
-} as const;
-const levelLineColor = "#E7B40B";
-const emptyBarColor = "rgba(139, 148, 158, 0.20)";
 const EMPTY_BAR_RATIO = 1;
 const DATA_HEIGHT_RATIO = 1;
 
@@ -74,6 +67,7 @@ export function DailyTokenUsageChart({
   granularity: TokenUsageGranularity;
 }) {
   const [hovered, setHovered] = useState(false);
+  const colors = useChartAppearance();
   const maximumTotal = data.reduce((maximum, day) => Math.max(maximum, totalTokens(day)), 0);
   const axisMaximum = Math.max(1, maximumTotal / DATA_HEIGHT_RATIO);
   const emptyBarHeight = axisMaximum * EMPTY_BAR_RATIO;
@@ -83,16 +77,17 @@ export function DailyTokenUsageChart({
     : nonZeroTotals.reduce((sum, total) => sum + total, 0) / nonZeroTotals.length;
 
   const option = useMemo<EChartsCoreOption>(() => ({
-    animationDuration: 450,
+    animation: !colors.reducedMotion,
+    animationDuration: 300,
     animationEasing: "cubicOut",
     grid: { top: 8, right: 0, bottom: 0, left: 0 },
     tooltip: {
       trigger: "axis",
       confine: true,
-      backgroundColor: "var(--vscode-editorHoverWidget-background)",
-      borderColor: "var(--vscode-editorHoverWidget-border)",
-      textStyle: { color: "var(--vscode-foreground)", fontFamily: "PingFang-Medium" },
-      extraCssText: "border-radius: 8px; box-shadow: 0 12px 32px rgb(0 0 0 / 30%); font-size: var(--daily-token-tooltip-font-size); line-height: 1.5;",
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      textStyle: { color: colors.foreground },
+      extraCssText: "border-radius: 8px; box-shadow: var(--oa-tooltip-shadow); font-size: var(--daily-token-tooltip-font-size); line-height: 1.5;",
       axisPointer: {
         type: "shadow",
         shadowStyle: { color: "rgba(139, 148, 158, 0.14)" },
@@ -103,10 +98,10 @@ export function DailyTokenUsageChart({
         return [
           formatTooltipTime(day.bucketStartMs, granularity),
           `${t("总请求")}：${formatCompactInteger(totalTokens(day))}`,
-          `${colorMark(seriesColors.input)}${t("输入（非缓存）")}：${formatCompactInteger(day.inputTokens)}`,
-          `${colorMark(seriesColors.cacheRead)}${t("缓存输入")}：${formatCompactInteger(day.cacheReadTokens)}`,
-          `${colorMark(seriesColors.cacheWrite)}${t("缓存写入")}：${formatCompactInteger(day.cacheWriteTokens)}`,
-          `${colorMark(seriesColors.output)}${t("模型输出")}：${formatCompactInteger(day.outputTokens)}`,
+          `${colorMark(colors.input)}${t("输入（非缓存）")}：${formatCompactInteger(day.inputTokens)}`,
+          `${colorMark(colors.cacheRead)}${t("缓存输入")}：${formatCompactInteger(day.cacheReadTokens)}`,
+          `${colorMark(colors.cacheWrite)}${t("缓存写入")}：${formatCompactInteger(day.cacheWriteTokens)}`,
+          `${colorMark(colors.output)}${t("模型输出")}：${formatCompactInteger(day.outputTokens)}`,
         ].join("<br/>");
       },
     },
@@ -114,14 +109,14 @@ export function DailyTokenUsageChart({
       type: "category",
       data: data.map(({ bucketStartMs }) => bucketStartMs),
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: "rgba(139, 148, 158, 0.32)" } },
+      axisLine: { lineStyle: { color: colors.grid } },
       axisLabel: {
         interval: "auto",
         hideOverlap: true,
         formatter: (_value: string, index: number) => formatAxisLabel(data[index].bucketStartMs, granularity),
-        color: "#8c8c8c",
+        color: colors.secondary,
         fontFamily: "HFKos",
-        margin: 14,
+        margin: 12,
       },
     },
     yAxis: {
@@ -139,7 +134,7 @@ export function DailyTokenUsageChart({
         barMaxWidth: 18,
         silent: true,
         z: 0,
-        itemStyle: { color: emptyBarColor, borderRadius: [2, 2, 0, 0] },
+        itemStyle: { color: colors.track, borderRadius: [2, 2, 0, 0] },
         emphasis: { disabled: true },
       },
       {
@@ -148,7 +143,7 @@ export function DailyTokenUsageChart({
         stack: "tokens",
         data: data.map(({ inputTokens }) => inputTokens),
         barMaxWidth: 18,
-        itemStyle: { color: seriesColors.input },
+        itemStyle: { color: colors.input },
         ...seriesFocus,
       },
       {
@@ -157,7 +152,7 @@ export function DailyTokenUsageChart({
         stack: "tokens",
         data: data.map(({ cacheReadTokens }) => cacheReadTokens),
         barMaxWidth: 18,
-        itemStyle: { color: seriesColors.cacheRead },
+        itemStyle: { color: colors.cacheRead },
         ...seriesFocus,
       },
       {
@@ -166,7 +161,7 @@ export function DailyTokenUsageChart({
         stack: "tokens",
         data: data.map(({ cacheWriteTokens }) => cacheWriteTokens),
         barMaxWidth: 18,
-        itemStyle: { color: seriesColors.cacheWrite },
+        itemStyle: { color: colors.cacheWrite },
         ...seriesFocus,
       },
       {
@@ -176,16 +171,16 @@ export function DailyTokenUsageChart({
         data: data.map(({ outputTokens }) => outputTokens),
         barMaxWidth: 18,
         barGap: "-100%",
-        itemStyle: { color: seriesColors.output, borderRadius: [2, 2, 0, 0] },
+        itemStyle: { color: colors.output, borderRadius: [2, 2, 0, 0] },
         markLine: {
           silent: true,
           symbol: "none",
-          lineStyle: { color: levelLineColor, opacity: hovered ? 1 : 0, type: "dashed", width: 2 },
+          lineStyle: { color: colors.secondary, opacity: hovered ? 1 : 0, type: "dashed", width: 1 },
           label: {
             show: hovered,
             position: "insideStartTop",
             formatter: t("平均"),
-            color: levelLineColor,
+            color: colors.secondary,
             distance: 8,
           },
           data: [{ yAxis: averageLevel }],
@@ -193,10 +188,11 @@ export function DailyTokenUsageChart({
         ...seriesFocus,
       },
     ],
-  }), [averageLevel, axisMaximum, data, emptyBarHeight, granularity, hovered]);
+  }), [averageLevel, axisMaximum, colors, data, emptyBarHeight, granularity, hovered]);
 
   return <EChart
     option={option}
+    ariaLabel={t("Token 消耗")}
     className={styles.root}
     onMouseEnter={() => setHovered(true)}
     onMouseLeave={() => setHovered(false)}

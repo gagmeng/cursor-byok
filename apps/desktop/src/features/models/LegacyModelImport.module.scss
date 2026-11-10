@@ -2,12 +2,12 @@
 
 .content {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .source {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 
   code {
     overflow-wrap: anywhere;
@@ -23,11 +23,11 @@
 
   > div {
     display: grid;
-    gap: 3px;
-    padding: 10px;
+    gap: 4px;
+    padding: 12px;
     background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border);
-    border-radius: 5px;
+    border-radius: var(--oa-control-radius);
   }
 
   small {
@@ -38,7 +38,7 @@
 
 .models {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .model {
@@ -47,14 +47,14 @@
   justify-content: space-between;
   gap: 16px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 8px 12px;
   background: var(--vscode-list-inactiveSelectionBackground);
-  border-radius: 5px;
+  border-radius: var(--oa-control-radius);
 
   > div {
     display: grid;
     min-width: 0;
-    gap: 3px;
+    gap: 4px;
   }
 
   small {

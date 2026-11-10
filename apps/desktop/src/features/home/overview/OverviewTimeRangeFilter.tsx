@@ -1,3 +1,4 @@
+//! Presents overview time ranges and a keyboard-accessible custom filter in compact and wide windows.
 import { autoUpdate, computePosition, flip, offset, shift, size } from "@floating-ui/dom";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -5,6 +6,7 @@ import { parseTimeInput } from "../../../shared/utils/parseTimeInput";
 import controls from "../../../shared/ui/Controls.module.scss";
 import { Icon } from "../../../shared/ui/Icon";
 import { ModelSelect, type ModelSelectOption } from "../../../shared/ui/ModelSelect";
+import { Select } from "../../../shared/ui/Select";
 import { TooltipTrigger } from "../../../shared/ui/TooltipTrigger";
 import { reloadIcon } from "../../../shared/ui/icons";
 import styles from "./OverviewTimeRangeFilter.module.scss";
@@ -42,13 +44,25 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
     { value: "twenty-four-hours", label: t("近24小时") },
   ];
   const customButton = useRef<HTMLButtonElement>(null);
+  const compactPreset = useRef<HTMLDivElement>(null);
+  const customReference = () => window.matchMedia("(max-width: 1000px)").matches
+    ? compactPreset.current?.querySelector("button") ?? null : customButton.current;
   const popover = useRef<HTMLDivElement>(null);
   const popoverId = useId();
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 1000px)").matches);
   const [position, setPosition] = useState({ left: 0, top: 0, width: 300, maxHeight: 480 });
 
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1000px)");
+    const update = () => setCompact(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
   useLayoutEffect(() => {
-    if (!customOpen || !customButton.current || !popover.current) return;
-    return autoUpdate(customButton.current, popover.current, () => void computePosition(customButton.current!, popover.current!, {
+    const reference = customReference();
+    if (!customOpen || !reference || !popover.current) return;
+    return autoUpdate(reference, popover.current, () => void computePosition(reference, popover.current!, {
       placement: "bottom-end",
       middleware: [offset(5), flip({ padding: 10 }), shift({ padding: 10 }), size({
         padding: 10,
@@ -58,13 +72,22 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
         })),
       })],
     }).then(({ x, y }) => setPosition((current) => ({ ...current, left: x, top: y }))));
+  }, [compact, customOpen]);
+
+  useEffect(() => {
+    if (!customOpen) return;
+    const frame = requestAnimationFrame(() => popover.current?.querySelector("input")?.focus());
+    return () => {
+      cancelAnimationFrame(frame);
+      customReference()?.focus();
+    };
   }, [customOpen]);
 
   useEffect(() => {
     if (!customOpen) return;
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!customButton.current?.contains(target) && !popover.current?.contains(target)) onCustomOpenChange(false);
+      if (!customButton.current?.contains(target) && !compactPreset.current?.contains(target) && !popover.current?.contains(target)) onCustomOpenChange(false);
     };
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
@@ -74,6 +97,12 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
   const parsedEnd = parseTimeInput(customEnd);
   const customValid = parsedStart !== null && parsedEnd !== null && parsedStart < parsedEnd;
   return <div className={styles.root} aria-label={t("概览时间范围")}>
+    <div ref={compactPreset} className={styles.compactPreset}>
+      <Select value={value} options={[...presets, { value: "custom", label: t("自定义") }]} ariaLabel={t("概览时间范围")} onChange={(next) => {
+        if (next === "custom") onCustomOpenChange(true);
+        else onSelect(next as Exclude<OverviewRangePreset, "custom">);
+      }} />
+    </div>
     <div className={styles.presets}>
       {presets.map((preset) => <button
         key={preset.value}
@@ -105,8 +134,8 @@ export function OverviewTimeRangeFilter({ value, quick, customOpen, customStart,
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
+          event.stopPropagation();
           onCustomOpenChange(false);
-          customButton.current?.focus();
         }
       }}
     >

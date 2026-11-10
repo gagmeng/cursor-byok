@@ -1,22 +1,107 @@
+//! Styles setup, connection evidence and capability results with shared status semantics.
 @use "../../styles/typography" as typography;
 
-.pageTitle { display: block; font-size: typography.$font-size-base; line-height: 1.5; }
+.pageTitle { display: block; font-size: typography.$font-size-base; line-height: 24px; }
 .modelSelect { width: clamp(150px, calc(100vw - 650px), 300px); min-width: 0; }
-.panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; font-size: typography.$font-size-base; }
-.panel p { margin: 0; overflow-wrap: anywhere; }
-.panel small { color: var(--vscode-descriptionForeground); font-size: typography.$font-size-xs; }
-.panel a, .textButton { color: var(--vscode-textLink-foreground); }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  font-size: typography.$font-size-base;
+  line-height: 1.6;
+
+  p { margin: 0; overflow-wrap: anywhere; }
+  small { color: var(--vscode-descriptionForeground); font-size: typography.$font-size-xs; }
+  a { color: var(--vscode-textLink-foreground); }
+}
+
 .error { color: var(--vscode-errorForeground); }
-.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
-.steps li { display: flex; align-items: center; gap: 14px; }
-.steps li > div { display: flex; flex: 1; flex-direction: column; gap: 4px; }
-.textButton { background: none; border: 0; cursor: pointer; font: inherit; }
-.instruction { display: flex; align-items: center; gap: 12px; }
-.instruction code { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: typography.$font-size-xs; }
-.evidence, .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-.evidence > div, .metrics > div { display: flex; flex-direction: column; gap: 6px; }
-.resultHeader { display: flex; align-items: center; gap: 12px; }
-.resultHeader > strong { flex: 1; }
-[data-state="passed"] { color: var(--vscode-testing-iconPassed); }
-[data-state="failed"] { color: var(--vscode-errorForeground); }
-[data-state="waiting"], [data-state="untested"], [data-state="inconclusive"] { color: var(--vscode-descriptionForeground); }
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+
+  li { display: flex; align-items: flex-start; gap: 12px; }
+  li > div { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+  li > .status { min-width: 64px; }
+  li > a { flex: 0 0 auto; }
+}
+
+.textButton {
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--vscode-textLink-foreground);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.instruction {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: var(--oa-control-radius);
+
+  code { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-family: var(--oa-code-font); font-size: typography.$font-size-xs; }
+}
+
+.evidence,
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+
+  > div { display: flex; flex-direction: column; gap: 8px; }
+}
+
+.evidence > div {
+  padding-top: 12px;
+  border-top: 1px solid var(--vscode-sideBar-border);
+}
+
+.metrics {
+  padding-block: 4px;
+  strong { font-size: typography.$font-size-xxl; font-weight: 500; font-variant-numeric: tabular-nums; }
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  > strong { flex: 1; min-width: 0; }
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: typography.$font-size-xs;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+
+  &::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  &[data-state="passed"] { color: var(--vscode-testing-iconPassed); }
+  &[data-state="failed"] { color: var(--vscode-errorForeground); }
+  &[data-state="running"] { color: var(--vscode-textLink-foreground); }
+}
+
+@media (max-width: 900px) {
+  .panel { padding: 16px; }
+}

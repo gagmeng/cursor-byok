@@ -31,23 +31,23 @@
   background: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-editorWidget-border);
   border-radius: var(--oa-overlay-radius);
-  box-shadow: 0 20px 50px rgb(0 0 0 / 45%);
+  box-shadow: var(--oa-dropdown-shadow);
 
   // 只作用于弹窗自己的标题栏和页脚;内容里若出现 <header> 是内容自己的结构,
   // 被这里的边距染色会让内容层的缩进/对齐失效。
   > header {
     flex: 0 0 auto;
-    padding: 10px 18px;
+    padding: 12px 20px;
     border-bottom: 1px solid var(--vscode-editorWidget-border);
     font-size: type.$font-size-base;
-    font-weight: 630;
+    font-weight: 500;
   }
   > footer {
     flex: 0 0 auto;
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding: 10px 18px;
+    padding: 12px 20px;
     border-top: 1px solid var(--vscode-editorWidget-border);
   }
 }
@@ -66,7 +66,7 @@
 
 .banner {
   flex: 0 0 auto;
-  padding: 12px 18px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--vscode-editorWidget-border);
 }
 
@@ -76,5 +76,5 @@
 }
 
 .bodyContent {
-  padding: 18px;
+  padding: 20px;
 }

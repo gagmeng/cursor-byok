@@ -9,12 +9,13 @@ use([BarChart, GaugeChart, LineChart, GridComponent, LegendComponent, MarkLineCo
 
 type EChartProps = {
   option: EChartsCoreOption;
+  ariaLabel?: string;
   className?: string;
   onMouseEnter?: MouseEventHandler<HTMLDivElement>;
   onMouseLeave?: MouseEventHandler<HTMLDivElement>;
 };
 
-export function EChart({ option, className = styles.root, onMouseEnter, onMouseLeave }: EChartProps) {
+export function EChart({ option, ariaLabel, className = styles.root, onMouseEnter, onMouseLeave }: EChartProps) {
   const element = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,5 +35,5 @@ export function EChart({ option, className = styles.root, onMouseEnter, onMouseL
     if (node) getInstanceByDom(node)?.setOption(option, { notMerge: true });
   }, [option]);
 
-  return <div ref={element} className={className} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
+  return <div ref={element} role={ariaLabel ? "img" : undefined} aria-label={ariaLabel} className={className} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
 }

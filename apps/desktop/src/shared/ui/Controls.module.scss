@@ -1,42 +1,43 @@
-.primary {
-  min-height: 30px;
+.primary,
+.secondary {
+  min-height: var(--oa-control-height);
+  height: var(--oa-control-height);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 11px;
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-  border: 0;
-  border-radius: 5px;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: var(--oa-control-radius);
+  white-space: nowrap;
+  transition: color var(--oa-feedback-duration) var(--oa-easing), background-color var(--oa-feedback-duration) var(--oa-easing), border-color var(--oa-feedback-duration) var(--oa-easing);
+
   &:disabled { opacity: .5; cursor: not-allowed; }
 }
 
+.primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: 1px solid transparent;
+  &:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+}
+
 .secondary {
-  min-height: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, var(--vscode-sideBar-border));
-  border-radius: 6px;
-  white-space: nowrap;
-  &:hover { background: var(--vscode-list-hoverBackground); }
-  &:disabled { opacity: .5; cursor: not-allowed; }
+  &:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
 }
 
 .small {
   min-height: 24px;
   height: 24px;
-  padding-inline: 7px;
-  border-radius: 4px;
+  padding-inline: 8px;
+  border-radius: 6px;
 }
 
 .iconButton {
-  width: 25px;
-  height: 25px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -44,7 +45,8 @@
   text-decoration: none;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
+  transition: color var(--oa-feedback-duration) var(--oa-easing), background-color var(--oa-feedback-duration) var(--oa-easing);
 
   &:hover {
     background: var(--vscode-list-hoverBackground);

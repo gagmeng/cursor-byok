@@ -29,7 +29,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((done) => server.listen(0, "127.0.0.1", done));
 try {
-  await run(["--test", "--test-concurrency=1", ...process.argv.slice(2), "src/features/models/cursorModelCardLayout.test.mjs", "src/features/models/magpieModelImport.test.mjs", "src/features/diagnostics/diagnosticsUi.test.mjs"], {
+  await run(["--test", "--test-concurrency=1", ...process.argv.slice(2), "src/features/models/cursorModelCardLayout.test.mjs", "src/features/models/magpieModelImport.test.mjs", "src/features/diagnostics/diagnosticsUi.test.mjs", "src/shared/desktopAppearance.test.mjs"], {
     ...process.env,
     CURSOR_CARD_TEST_URL: `http://127.0.0.1:${server.address().port}/product-demo/demo/index.html`,
   });

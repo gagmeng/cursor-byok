@@ -2,12 +2,12 @@
 
 .root {
   flex: 0 0 auto;
-  min-height: 34px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  padding: 0px 0 6px 0;
+  padding: 0 0 8px;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
   background: transparent;
@@ -19,8 +19,8 @@
   gap: 4px;
 
   > button {
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -29,7 +29,7 @@
   margin-right: 4px;
 
   > button {
-    height: 26px;
-    padding: 0 7px;
+    height: 28px;
+    padding: 0 8px;
   }
 }

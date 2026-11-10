@@ -23,6 +23,8 @@
   --oa-code-font: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
   --oa-metrics-font: "PingFang-Medium", var(--oa-ui-font);
   --oa-number-font: "HFKos", "PingFang-Medium", var(--oa-ui-font);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
   font-family: var(--oa-ui-font);
   font-size: type.$font-size-base;
   color: var(--vscode-foreground);
@@ -58,6 +60,27 @@ select {
 
 button {
   cursor: pointer;
+}
+
+strong,
+b {
+  font-weight: 500;
+}
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 [data-tauri-drag-region] {

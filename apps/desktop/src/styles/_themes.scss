@@ -5,112 +5,147 @@
 }
 
 :root {
-  --oa-card-radius: 9px;
-  --oa-overlay-radius: 8px;
-}
-
-:root:not([data-platform="macos"]) {
-  --oa-card-radius: 7px;
-  --oa-overlay-radius: 6px;
+  --oa-card-radius: 12px;
+  --oa-overlay-radius: 10px;
+  --oa-control-radius: 8px;
+  --oa-control-height: 32px;
+  --oa-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --oa-feedback-duration: 140ms;
 }
 
 :root,
 :root[data-theme="default-dark"] {
-  --oa-tooltip-shadow: 0 12px 32px rgb(0 0 0 / 30%);
-  --oa-dropdown-shadow: 0 12px 28px rgb(0 0 0 / 38%);
+  --oa-tooltip-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+  --oa-dropdown-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  --oa-text-muted: #a0adbf;
+  --oa-chart-input: #42c9ad;
+  --oa-chart-cache-read: #549fff;
+  --oa-chart-cache-write: #3f6bb2;
+  --oa-chart-output: #f0b24b;
+  --oa-chart-track: #303947;
+  --oa-calendar-0: #272e38;
+  --oa-calendar-1: #163d32;
+  --oa-calendar-2: #176349;
+  --oa-calendar-3: #1d9462;
+  --oa-calendar-4: #3cc982;
 
   @include vscode-theme((
-    foreground: #ffffffe6,
-    errorForeground: #f53b3a,
-    descriptionForeground: #FFFFFFB3,
-    focusBorder: #49b0ff,
-    textLink-foreground: #49b0ff,
-    textCodeBlock-background: #2a2a2a,
-    editor-background: #141414,
-    editor-selectionBackground: #49b0ff33,
+    foreground: #edf2fa,
+    errorForeground: #ff858e,
+    descriptionForeground: #b5bfce,
+    focusBorder: #73b4ff,
+    textLink-foreground: #73b4ff,
+    textLink-activeForeground: #b8d6ff,
+    textCodeBlock-background: #151a23,
+    editor-background: #111319,
+    editor-selectionBackground: #549fff40,
     editor-selectionForeground: #ffffff,
     editorCursor-foreground: #ffffff,
-    editorLineNumber-foreground: #ffffff40,
-    editorLineNumber-activeForeground: #ffffffe6,
-    editorWidget-background: #1f1f1f,
-    editorWidget-border: #ffffff0a,
-    editorHoverWidget-background: #1f1f1f,
-    editorHoverWidget-border: #ffffff0a,
-    editorHoverWidget-foreground: #ffffffe6,
-    sideBar-border: #ffffff0a,
-    list-activeSelectionBackground: #ffffff0d,
-    list-activeSelectionForeground: #ffffffe6,
-    list-hoverBackground: #2a2a2a,
-    input-background: #2a2a2a,
-    input-foreground: #ffffffe6,
-    input-border: #ffffff0a,
-    button-background: #4489ff,
+    editorLineNumber-foreground: #a0adbf,
+    editorLineNumber-activeForeground: #edf2fa,
+    editorWidget-background: #1d212a,
+    editorWidget-border: #edf2fa24,
+    editorHoverWidget-background: #252c38,
+    editorHoverWidget-border: #edf2fa30,
+    editorHoverWidget-foreground: #edf2fa,
+    sideBar-background: #181c24,
+    sideBar-border: #edf2fa24,
+    widget-border: #edf2fa24,
+    list-activeSelectionBackground: #1d3864,
+    list-activeSelectionForeground: #b8d6ff,
+    list-hoverBackground: #293446,
+    input-background: #151a23,
+    input-foreground: #edf2fa,
+    input-border: #edf2fa30,
+    button-background: #2e66df,
+    button-hoverBackground: #3571e4,
     button-foreground: #ffffff,
-    dropdown-background: #2a2a2a,
-    dropdown-foreground: #ffffffe6,
-    dropdown-border: #ffffff0a,
-    badge-background: #4489ff,
-    badge-foreground: #fffffff2,
+    dropdown-background: #252c38,
+    dropdown-foreground: #edf2fa,
+    dropdown-border: #edf2fa30,
+    badge-background: #2e66df,
+    badge-foreground: #ffffff,
     scrollbarSlider-background: #ffffff14,
     scrollbarSlider-hoverBackground: #ffffff1a,
     scrollbarSlider-activeBackground: #ffffff26,
-    gitDecoration-addedResourceForeground: #00ec7e,
-    notifications-background: #1f1f1f,
-    notifications-foreground: #ffffffe6,
-    notifications-border: #ffffff14,
-    checkbox-background: #ffffff0d,
+    gitDecoration-addedResourceForeground: #4cdb92,
+    testing-iconPassed: #4cdb92,
+    editorWarning-foreground: #f3bc64,
+    progressBar-background: #549fff,
+    notifications-background: #252c38,
+    notifications-foreground: #edf2fa,
+    notifications-border: #edf2fa30,
+    checkbox-background: #151a23,
     checkbox-foreground: #ffffff,
-    checkbox-border: #ffffff0a,
+    checkbox-border: #edf2fa50,
   ));
   color-scheme: dark;
 }
 
 :root[data-theme="default-light"] {
-  --oa-tooltip-shadow: 0 8px 22px rgb(0 0 0 / 12%);
-  --oa-dropdown-shadow: 0 8px 20px rgb(0 0 0 / 14%);
+  --oa-tooltip-shadow: 0 4px 16px rgb(0 0 0 / 8%);
+  --oa-dropdown-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  --oa-text-muted: #65748a;
+  --oa-chart-input: #1d9a86;
+  --oa-chart-cache-read: #3478db;
+  --oa-chart-cache-write: #6a8dbf;
+  --oa-chart-output: #c3831f;
+  --oa-chart-track: #d9e2ef;
+  --oa-calendar-0: #e1e7ee;
+  --oa-calendar-1: #ccebd9;
+  --oa-calendar-2: #8fd7ac;
+  --oa-calendar-3: #48b777;
+  --oa-calendar-4: #23874d;
 
   @include vscode-theme((
-    foreground: #191919,
-    errorForeground: #f53b3a,
-    descriptionForeground: #888888,
-    focusBorder: #317cff,
-    textLink-foreground: #317cff,
-    textCodeBlock-background: #f0f0f0,
-    editor-background: #f5f5f5,
-    editor-selectionBackground: #317cff40,
-    editor-selectionForeground: #191919,
+    foreground: #1e293b,
+    errorForeground: #c63249,
+    descriptionForeground: #526075,
+    focusBorder: #2563eb,
+    textLink-foreground: #245ddb,
+    textLink-activeForeground: #174da6,
+    textCodeBlock-background: #e8edf5,
+    editor-background: #eff2f7,
+    editor-selectionBackground: #2563eb30,
+    editor-selectionForeground: #1e293b,
     editorCursor-foreground: #000000,
-    editorLineNumber-foreground: #1919194d,
-    editorLineNumber-activeForeground: #191919,
+    editorLineNumber-foreground: #65748a,
+    editorLineNumber-activeForeground: #1e293b,
     editorWidget-background: #ffffff,
-    editorWidget-border: #00000024,
+    editorWidget-border: #d6deea,
     editorHoverWidget-background: #ffffff,
-    editorHoverWidget-border: #00000024,
-    editorHoverWidget-foreground: #191919,
-    sideBar-border: #00000024,
-    list-activeSelectionBackground: #0000000f,
-    list-activeSelectionForeground: #191919,
-    list-hoverBackground: #f3f3f3,
+    editorHoverWidget-border: #c8d3e3,
+    editorHoverWidget-foreground: #1e293b,
+    sideBar-background: #ffffff,
+    sideBar-border: #d6deea,
+    widget-border: #d6deea,
+    list-activeSelectionBackground: #e1ecff,
+    list-activeSelectionForeground: #174da6,
+    list-hoverBackground: #eaf0f9,
     input-background: #ffffff,
-    input-foreground: #191919,
-    input-border: #00000024,
-    button-background: #317cff,
+    input-foreground: #1e293b,
+    input-border: #bfccdf,
+    button-background: #2563eb,
+    button-hoverBackground: #1d55d5,
     button-foreground: #ffffff,
     dropdown-background: #ffffff,
-    dropdown-foreground: #191919,
-    dropdown-border: #00000024,
-    badge-background: #317cff,
-    badge-foreground: #fffffff2,
+    dropdown-foreground: #1e293b,
+    dropdown-border: #c8d3e3,
+    badge-background: #2563eb,
+    badge-foreground: #ffffff,
     scrollbarSlider-background: #00000014,
     scrollbarSlider-hoverBackground: #1919191a,
     scrollbarSlider-activeBackground: #19191926,
-    gitDecoration-addedResourceForeground: #00a558,
+    gitDecoration-addedResourceForeground: #158047,
+    testing-iconPassed: #158047,
+    editorWarning-foreground: #946009,
+    progressBar-background: #3478db,
     notifications-background: #ffffff,
-    notifications-foreground: #191919,
-    notifications-border: #00000024,
-    checkbox-background: #0000000f,
+    notifications-foreground: #1e293b,
+    notifications-border: #c8d3e3,
+    checkbox-background: #ffffff,
     checkbox-foreground: #ffffff,
-    checkbox-border: #00000024,
+    checkbox-border: #95a6bc,
   ));
   color-scheme: light;
 }

@@ -2,12 +2,12 @@
 
 .content {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .address {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
 
@@ -28,7 +28,7 @@
 
 .source {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 
   code {
     overflow-wrap: anywhere;
@@ -44,11 +44,11 @@
 
   > div {
     display: grid;
-    gap: 3px;
-    padding: 10px;
+    gap: 4px;
+    padding: 12px;
     background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border);
-    border-radius: 5px;
+    border-radius: var(--oa-control-radius);
   }
 
   small {
@@ -59,22 +59,22 @@
 
 .groups {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .group {
   display: grid;
   gap: 4px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--vscode-input-border);
-  border-radius: 5px;
+  border-radius: var(--oa-control-radius);
 }
 
 // 分组头:折叠箭头 + 勾选框 + 路由组说明;说明允许换行,不挤掉勾选框。
 .groupHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 24px;
 
   small {
@@ -112,7 +112,7 @@
 // 再加一段层级间距。直接写 padding-left 会被模型行自身的内边距吃掉,
 // 最后只剩几像素,看不出「上面的分组管着下面的行」。
 $group-toggle-width: 20px;
-$group-gap: 6px;
+$group-gap: 8px;
 $row-indent: 20px;
 
 .models {
@@ -124,7 +124,7 @@ $row-indent: 20px;
 .model {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   padding: 4px 6px;
   border-radius: 4px;

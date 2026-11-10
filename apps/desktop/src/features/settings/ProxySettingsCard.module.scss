@@ -3,7 +3,7 @@
 .content,
 .customFields {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .content {
@@ -12,7 +12,7 @@
 
 .row {
   min-width: 0;
-  min-height: 34px;
+  min-height: var(--oa-control-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -45,7 +45,7 @@
 .actionGroup {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 @media (max-width: 680px) {

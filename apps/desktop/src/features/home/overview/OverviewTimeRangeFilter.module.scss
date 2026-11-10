@@ -9,16 +9,17 @@
 .filterRow { width: 100%; }
 
 .root {
-  gap: 3px;
+  gap: 4px;
 }
+
+.compactPreset { display: none; width: 168px; }
 
 .presets {
   overflow: hidden;
-  // border: 1px solid var(--vscode-sideBar-border);
-  border-radius: 5px;
+  border-radius: var(--oa-control-radius);
 
   button {
-    height: 25px;
+    height: 32px;
     padding: 0 8px;
     color: var(--vscode-descriptionForeground);
     background: transparent;
@@ -63,7 +64,7 @@
     color: var(--vscode-input-foreground);
     background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border);
-    border-radius: 5px;
+    border-radius: var(--oa-control-radius);
     outline: none;
     font: inherit;
 
@@ -74,24 +75,29 @@
 .popoverActions {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
 
 .quickPresets {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 
   button {
-    height: 26px;
-    padding: 0 10px;
+    height: 28px;
+    padding: 0 12px;
     color: var(--vscode-descriptionForeground);
     background: var(--vscode-button-secondaryBackground, var(--vscode-sideBar-background));
     border: 1px solid var(--vscode-sideBar-border);
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: type.$font-size-xs;
     white-space: nowrap;
 
     &:hover { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); }
     &[aria-pressed="true"] { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); border-color: transparent; }
   }
+}
+
+@media (max-width: 1000px) {
+  .presets { display: none; }
+  .compactPreset { display: block; }
 }

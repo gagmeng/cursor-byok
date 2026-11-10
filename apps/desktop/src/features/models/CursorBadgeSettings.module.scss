@@ -2,18 +2,18 @@
 
 .body {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .preview {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
+  gap: 12px;
+  min-height: 48px;
   padding: 0 12px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border);
-  border-radius: 5px;
+  border-radius: var(--oa-control-radius);
 }
 
 .previewLabel {
@@ -25,7 +25,7 @@
 .previewBadges {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   overflow: hidden;
 }
 
@@ -55,7 +55,7 @@
 
 .colors {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .swatch {
@@ -63,7 +63,7 @@
   height: 24px;
   padding: 0;
   border: 1px solid var(--vscode-input-border);
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: pointer;
 
   &:hover { border-color: var(--vscode-focusBorder); }

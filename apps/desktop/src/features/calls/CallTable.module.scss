@@ -1,12 +1,21 @@
 @use "../../styles/typography" as type;
 
 .status {
-  padding: 3px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--vscode-descriptionForeground);
-  background: var(--vscode-input-background);
-  border-radius: 99px;
   font-size: type.$font-size-xs;
+
+  &::before {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    content: "";
+    border-radius: 50%;
+    background: currentColor;
+  }
 }
 
-.completed { color: #56b870; }
+.completed { color: var(--vscode-testing-iconPassed); }
 .failed { color: var(--vscode-errorForeground, #f48771); }

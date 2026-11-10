@@ -4,7 +4,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   color: var(--vscode-descriptionForeground);
   font-size: type.$font-size-xs;
 }
@@ -13,7 +13,7 @@
   min-height: 20px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   line-height: 20px;
 }
 .hint {
@@ -32,7 +32,7 @@
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 5px;
+  border-radius: var(--oa-control-radius);
   outline: none;
   font: inherit;
 
@@ -45,8 +45,8 @@
 }
 
 .input {
-  height: 34px;
-  padding: 0 10px;
+  height: var(--oa-control-height);
+  padding: 0 12px;
 
   &[type="number"] {
     appearance: textfield;
@@ -64,7 +64,7 @@
   width: 100%;
 
   input {
-    padding-right: 34px;
+    padding-right: 36px;
   }
 }
 
@@ -72,8 +72,8 @@
   position: absolute;
   top: 0;
   right: 0;
-  width: 30px;
-  height: 34px;
+  width: var(--oa-control-height);
+  height: var(--oa-control-height);
   display: grid;
   place-items: center;
   padding: 0;
