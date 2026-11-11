@@ -77,17 +77,6 @@ pub struct MagpieImportModel {
     pub existing: bool,
 }
 
-/// 导入前要知道哪些已经配置过。判定键必须与 `create_models_if_missing`
-/// 的冲突键一致,否则预览说"新增"、导入却跳过。
-async fn existing_model_hashes(store: &Store) -> Result<std::collections::HashSet<String>> {
-    store
-        .models()
-        .await?
-        .into_iter()
-        .map(|model| model_hash(&ModelConfigInput::from(&model)))
-        .collect::<Result<std::collections::HashSet<_>>>()
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub struct LegacyModelImportPreview {
     pub source: String,
@@ -275,28 +264,19 @@ impl ControlService {
                 config: model.into(),
             })
             .collect();
-        let mut plugin_resources = Vec::new();
-        for plugin in self.plugins.plugins().await {
-            for resource in &plugin.resources {
-                let value = self
-                    .plugins
-                    .export_resources(&plugin.id, &resource.resource_type)
-                    .await?;
-                let accounts = value
-                    .get("accounts")
-                    .and_then(serde_json::Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                if accounts.is_empty() {
-                    continue;
-                }
-                plugin_resources.push(MigrationPluginResources {
-                    plugin_id: plugin.id.clone(),
-                    resource_type: resource.resource_type.clone(),
+        let plugin_resources = self
+            .plugins
+            .persisted_resource_exports()
+            .await?
+            .into_iter()
+            .map(
+                |(plugin_id, resource_type, accounts)| MigrationPluginResources {
+                    plugin_id,
+                    resource_type,
                     accounts,
-                });
-            }
-        }
+                },
+            )
+            .collect();
         Ok(MigrationFile {
             format: FORMAT.into(),
             version: VERSION,
@@ -692,7 +672,18 @@ impl ControlService {
 
     pub async fn magpie_models(&self, address: Option<&str>) -> Result<MagpieImportPreview> {
         let gateway = super::magpie::resolve(&super::magpie::client()?, address).await?;
-        let existing = existing_model_hashes(&self.store).await?;
+        let existing = self.store.models().await?;
+        let fingerprints = existing
+            .iter()
+            .map(|model| model_hash(&ModelConfigInput::from(model)))
+            .collect::<Result<std::collections::HashSet<_>>>()?;
+        let magpie = existing
+            .iter()
+            .map(|model| crate::model::magpie_model_identity(&ModelConfigInput::from(model)))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<std::collections::HashSet<_>>();
         let models = gateway
             .models
             .iter()
@@ -707,7 +698,11 @@ impl ControlService {
                     context_window_tokens: model.context_window_tokens,
                     max_completion_tokens: model.max_completion_tokens,
                     reasoning_levels: model.reasoning_levels.clone(),
-                    existing: model_hash(&input).is_ok_and(|hash| existing.contains(&hash)),
+                    existing: model_hash(&input).is_ok_and(|hash| fingerprints.contains(&hash))
+                        || crate::model::magpie_model_identity(&input)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|identity| magpie.contains(&identity)),
                 }
             })
             .collect();
@@ -726,6 +721,18 @@ impl ControlService {
         // 重新探测而不是信任预览:预览到确认之间 magpie 可能被关掉或换了端口。
         let gateway = super::magpie::resolve(&super::magpie::client()?, address).await?;
         let selected: BTreeSet<&str> = model_ids.iter().map(String::as_str).collect();
+        let available: BTreeSet<&str> = gateway
+            .models
+            .iter()
+            .map(|model| model.model_id.as_str())
+            .collect();
+        let missing = selected.difference(&available).copied().collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(Error::Config(format!(
+                "magpie model catalog changed; query the gateway again before importing: {}",
+                missing.join(", ")
+            )));
+        }
         let inputs = gateway
             .models
             .iter()
@@ -937,7 +944,7 @@ impl ControlService {
     }
 
     pub async fn set_commit_settings(&self, settings: CommitSettings) -> Result<CommitSettings> {
-        self.store.set_commit_settings(settings).await
+        self.plugins.set_commit_settings(settings).await
     }
 
     pub async fn auto_review_model(&self) -> Result<Option<String>> {
@@ -945,7 +952,7 @@ impl ControlService {
     }
 
     pub async fn set_auto_review_model(&self, model: Option<String>) -> Result<()> {
-        self.store.set_auto_review_model(model).await
+        self.plugins.set_auto_review_model(model).await
     }
 
     pub async fn model_badge_settings(&self) -> Result<ModelBadgeSettings> {

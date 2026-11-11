@@ -13,6 +13,7 @@ mod migrations;
 mod model_system_prompts;
 mod models;
 mod overview;
+mod recovery;
 mod runs;
 mod settings;
 mod sqlite;

@@ -47,6 +47,7 @@ struct RegistryInner {
     entries: RwLock<Option<Vec<PluginEntry>>>,
     workers: Mutex<HashMap<String, Arc<PluginWorker>>>,
     oauth_sessions: Mutex<HashMap<String, OAuthSession>>,
+    configuration: Mutex<()>,
 }
 
 struct OAuthSession {
@@ -133,8 +134,55 @@ pub struct PluginInvocationPlan {
 }
 
 impl PluginRegistry {
+    pub async fn persisted_resource_exports(
+        &self,
+    ) -> Result<Vec<(String, String, Vec<serde_json::Value>)>> {
+        let mut exports = Vec::new();
+        for (plugin, resource_type, value) in self.inner.state.resource_snapshots().await? {
+            let records: Vec<ResourceRecord> = serde_json::from_value(value).map_err(|error| {
+                Error::Config(format!(
+                    "plugin resource backup cannot read {plugin}/{resource_type}: {error}"
+                ))
+            })?;
+            if !records.is_empty() {
+                exports.push((
+                    plugin,
+                    resource_type,
+                    records
+                        .into_iter()
+                        .map(|record| record.private_data)
+                        .collect(),
+                ));
+            }
+        }
+        Ok(exports)
+    }
+
     pub fn managed(store: Store, runtime: PluginRuntime, app_version: String) -> Result<Self> {
         let data = PluginDataStore::managed()?;
+        Self::with_data(store, runtime, app_version, data)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        store: Store,
+        runtime: PluginRuntime,
+        root: std::path::PathBuf,
+    ) -> Result<Self> {
+        Self::with_data(
+            store,
+            runtime,
+            "test".into(),
+            PluginDataStore::for_test(root)?,
+        )
+    }
+
+    fn with_data(
+        store: Store,
+        runtime: PluginRuntime,
+        app_version: String,
+        data: PluginDataStore,
+    ) -> Result<Self> {
         Ok(Self {
             inner: Arc::new(RegistryInner {
                 store,
@@ -144,6 +192,7 @@ impl PluginRegistry {
                 entries: RwLock::new(None),
                 workers: Mutex::new(HashMap::new()),
                 oauth_sessions: Mutex::new(HashMap::new()),
+                configuration: Mutex::new(()),
             }),
         })
     }
@@ -717,11 +766,17 @@ impl PluginRegistry {
         resource_type: &str,
         resources: Vec<ResourceDraft>,
     ) -> Result<OAuthPollResponse> {
-        let outcome = self
-            .inner
-            .state
-            .upsert_resources(plugin_id, resource_type, resources)
-            .await?;
+        let outcome = {
+            let _configuration = self.inner.configuration.lock().await;
+            self.inner
+                .store
+                .invalidate_plugin_capabilities(plugin_id)
+                .await?;
+            self.inner
+                .state
+                .upsert_resources(plugin_id, resource_type, resources)
+                .await?
+        };
         let model_sync_error = self
             .sync_provider_models_for_resource(entry, executable, resource_type)
             .await;
@@ -791,6 +846,11 @@ impl PluginRegistry {
                 "import produced more than {MAX_IMPORT_DRAFTS} resources"
             )));
         }
+        let _configuration = self.inner.configuration.lock().await;
+        self.inner
+            .store
+            .invalidate_plugin_capabilities(plugin_id)
+            .await?;
         let outcome = if keep_existing {
             self.inner
                 .state
@@ -802,6 +862,7 @@ impl PluginRegistry {
                 .upsert_resources(plugin_id, resource_type, parsed.resources)
                 .await?
         };
+        drop(_configuration);
         let model_sync_error = self
             .sync_provider_models_for_resource(&entry, &executable, resource_type)
             .await;
@@ -861,6 +922,11 @@ impl PluginRegistry {
             )
             .await?;
         let patch: ResourcePatch = serde_json::from_value(value)?;
+        let _configuration = self.inner.configuration.lock().await;
+        self.inner
+            .store
+            .invalidate_plugin_capabilities(plugin_id)
+            .await?;
         self.inner
             .state
             .apply_patch(plugin_id, resource_type, resource_id, patch)
@@ -911,6 +977,11 @@ impl PluginRegistry {
             .await?;
         let result: ResourceActionResult = serde_json::from_value(value)?;
         if let Some(patch) = result.patch.clone() {
+            let _configuration = self.inner.configuration.lock().await;
+            self.inner
+                .store
+                .invalidate_plugin_capabilities(plugin_id)
+                .await?;
             self.inner
                 .state
                 .apply_patch(plugin_id, resource_type, resource_id, patch)
@@ -949,6 +1020,11 @@ impl PluginRegistry {
                 tracing::warn!(plugin = %plugin_id, %error, "plugin resource remove hook failed");
             }
         }
+        let _configuration = self.inner.configuration.lock().await;
+        self.inner
+            .store
+            .invalidate_plugin_capabilities(plugin_id)
+            .await?;
         self.inner
             .state
             .remove_resource(plugin_id, resource_type, resource_id)
@@ -979,6 +1055,11 @@ impl PluginRegistry {
                 "plugin provider '{provider_id}' does not enumerate models"
             )));
         }
+        let _configuration = self.inner.configuration.lock().await;
+        self.inner
+            .store
+            .invalidate_plugin_capabilities(plugin_id)
+            .await?;
         self.inner
             .state
             .set_model_enabled(plugin_id, provider_id, model_id, enabled)
@@ -986,10 +1067,74 @@ impl PluginRegistry {
     }
 
     pub async fn remove(&self, plugin_id: &str) -> Result<()> {
+        let _configuration = self.inner.configuration.lock().await;
+        self.inner
+            .store
+            .ensure_plugin_unreferenced(plugin_id)
+            .await?;
+        self.inner
+            .store
+            .invalidate_plugin_capabilities(plugin_id)
+            .await?;
         if let Some(worker) = self.inner.workers.lock().await.remove(plugin_id) {
             worker.stop().await;
         }
         self.inner.state.clear(plugin_id).await
+    }
+
+    pub async fn capability_revision(&self, model_id: &str) -> Result<i64> {
+        let _configuration = self.inner.configuration.lock().await;
+        let descriptor = self.model_descriptor(model_id).await?;
+        if !descriptor.enabled {
+            return Err(Error::Config(format!(
+                "capability test model is disabled: {model_id}"
+            )));
+        }
+        self.inner.store.capability_revision(model_id).await
+    }
+
+    pub async fn save_capability_result(
+        &self,
+        result: &crate::store::CapabilityResult,
+        revision: i64,
+    ) -> Result<bool> {
+        let _configuration = self.inner.configuration.lock().await;
+        if !self
+            .model_descriptor(&result.model_id)
+            .await
+            .is_ok_and(|model| model.enabled)
+        {
+            return Ok(false);
+        }
+        self.inner
+            .store
+            .save_current_capability_result(result, revision)
+            .await
+    }
+
+    pub async fn set_commit_settings(
+        &self,
+        settings: crate::store::CommitSettings,
+    ) -> Result<crate::store::CommitSettings> {
+        let _configuration = self.inner.configuration.lock().await;
+        if settings
+            .model_id
+            .starts_with(super::descriptor::ADAPTER_ID_PREFIX)
+        {
+            self.model_descriptor(&settings.model_id).await?;
+        }
+        self.inner.store.set_commit_settings(settings).await
+    }
+
+    pub async fn set_auto_review_model(&self, model: Option<String>) -> Result<()> {
+        let _configuration = self.inner.configuration.lock().await;
+        if let Some(id) = model
+            .as_deref()
+            .filter(|id| id.starts_with(super::descriptor::ADAPTER_ID_PREFIX))
+        {
+            self.model_descriptor(id).await?;
+        }
+        self.inner.store.set_auto_review_model(model).await
     }
 
     async fn descriptor(&self, entry: &PluginEntry, executable: &Path) -> PluginDescriptor {
@@ -1207,6 +1352,11 @@ impl PluginRegistry {
                 provider.id
             )));
         }
+        let _configuration = self.inner.configuration.lock().await;
+        self.inner
+            .store
+            .invalidate_plugin_capabilities(plugin_id)
+            .await?;
         self.inner
             .state
             .replace_models(plugin_id, &provider.id, &models)

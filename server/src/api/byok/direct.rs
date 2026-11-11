@@ -141,6 +141,7 @@ impl NativeForwarder {
             .collect::<serde_json::Map<_, _>>();
         let client = self.clients.provider_client(self.request_timeout).await?;
         let recorder = CallRecorder::start(self.store.clone(), new_call).await?;
+        let _cancel = recorder.cancel_on_drop();
         recorder
             .request(Value::Object(logged_headers), &body)
             .await?;
@@ -163,7 +164,7 @@ impl NativeForwarder {
         let headers = response.headers().clone();
         let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
         if stream && status.is_success() {
-            Ok(self.stream_response(protocol, response, recorder, status, &headers))
+            Ok(self.stream_response(protocol, response, recorder, _cancel, status, &headers))
         } else {
             let bytes = match response.bytes().await {
                 Ok(bytes) => bytes,
@@ -177,10 +178,16 @@ impl NativeForwarder {
             if status.is_success() {
                 if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
                     let summary = NativeSummary::from_value(protocol, &value);
+                    let complete = summary.complete_response(protocol, &value);
                     if let Some(usage) = summary.usage {
                         recorder.usage(usage).await?;
                     }
-                    if let Some(message) = summary.failure {
+                    if let Some(message) = summary.failure.or_else(|| {
+                        (!complete).then(|| {
+                            "native upstream response is missing protocol completion evidence"
+                                .into()
+                        })
+                    }) {
                         recorder.failed(&Error::Provider(message)).await?;
                     } else {
                         recorder
@@ -188,7 +195,11 @@ impl NativeForwarder {
                             .await?;
                     }
                 } else {
-                    recorder.completed(FinishReason::Stop).await?;
+                    recorder
+                        .failed(&Error::Protocol(
+                            "native upstream returned invalid JSON".into(),
+                        ))
+                        .await?;
                 }
             } else {
                 recorder
@@ -204,12 +215,13 @@ impl NativeForwarder {
         protocol: Protocol,
         response: reqwest::Response,
         recorder: CallRecorder,
+        cancel: crate::provider::CancelOnDrop,
         status: StatusCode,
         headers: &HeaderMap,
     ) -> Response {
         let idle_timeout = self.stream_idle_timeout;
         let output = try_stream! {
-            let _cancel = recorder.cancel_on_drop();
+            let _cancel = cancel;
             let (sender, receiver) = tokio::sync::mpsc::channel::<Bytes>(8);
             let observer = tokio::spawn(observe_events(protocol, receiver));
             let mut upstream = response.bytes_stream();
@@ -236,13 +248,13 @@ impl NativeForwarder {
             drop(sender);
             if let Ok(summary) = observer.await {
                 if let Some(usage) = summary.usage { recorder.usage(usage).await?; }
-                if let Some(message) = summary.failure {
+                if let Some(message) = summary.failure.or_else(|| (!summary.terminal).then(|| "native upstream stream ended without a protocol completion event".into())) {
                     recorder.failed(&Error::Provider(message)).await?;
                 } else {
                     recorder.completed(summary.finish.unwrap_or(FinishReason::Stop)).await?;
                 }
             } else {
-                recorder.completed(FinishReason::Stop).await?;
+                recorder.failed(&Error::Protocol("native upstream stream observer did not complete".into())).await?;
             }
         };
         let output = output.map(|result: Result<Bytes>| result);
@@ -269,9 +281,25 @@ struct NativeSummary {
     usage: Option<Usage>,
     finish: Option<FinishReason>,
     failure: Option<String>,
+    terminal: bool,
 }
 
 impl NativeSummary {
+    fn complete_response(&self, protocol: Protocol, value: &Value) -> bool {
+        match protocol {
+            Protocol::Chat => {
+                self.finish.is_some() && value.get("choices").is_some_and(Value::is_array)
+            }
+            Protocol::Responses => matches!(
+                value.get("status").and_then(Value::as_str),
+                Some("completed" | "incomplete")
+            ),
+            Protocol::Messages => {
+                value.get("type").and_then(Value::as_str) == Some("message")
+                    && self.finish.is_some()
+            }
+        }
+    }
     fn from_value(protocol: Protocol, value: &Value) -> Self {
         let mut summary = Self::default();
         summary.observe(protocol, value);
@@ -279,6 +307,16 @@ impl NativeSummary {
     }
 
     fn observe(&mut self, protocol: Protocol, value: &Value) {
+        self.terminal |= match protocol {
+            Protocol::Chat => value
+                .pointer("/choices/0/finish_reason")
+                .is_some_and(|reason| reason.is_string()),
+            Protocol::Responses => matches!(
+                value.get("type").and_then(Value::as_str),
+                Some("response.completed" | "response.incomplete")
+            ),
+            Protocol::Messages => value.get("type").and_then(Value::as_str) == Some("message_stop"),
+        };
         if matches!(
             value.get("type").and_then(Value::as_str),
             Some("error" | "response.failed")
@@ -368,12 +406,74 @@ async fn observe_events(
     futures_util::pin_mut!(source);
     let mut summary = NativeSummary::default();
     while let Some(event) = source.next().await {
-        let Ok(event) = event else {
-            break;
-        };
-        if let Ok(value) = serde_json::from_str::<Value>(&event.data) {
-            summary.observe(protocol, &value);
+        match event {
+            Ok(event) if event.data == "[DONE]" && matches!(protocol, Protocol::Chat) => {
+                summary.terminal = true
+            }
+            Ok(event) => match serde_json::from_str::<Value>(&event.data) {
+                Ok(value) => summary.observe(protocol, &value),
+                Err(error) => {
+                    summary.failure = Some(format!(
+                        "native upstream SSE contains invalid JSON: {error}"
+                    ))
+                }
+            },
+            Err(error) => {
+                summary.failure = Some(format!("native upstream SSE parsing failed: {error}"));
+                break;
+            }
         }
     }
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    async fn summary(protocol: Protocol, data: &str) -> NativeSummary {
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        sender
+            .send(Bytes::copy_from_slice(data.as_bytes()))
+            .await
+            .unwrap();
+        drop(sender);
+        observe_events(protocol, receiver).await
+    }
+
+    #[tokio::test]
+    async fn all_native_protocols_require_completion_and_preserve_error_evidence() {
+        for (protocol,partial,terminal) in [
+            (Protocol::Chat,"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n","data: [DONE]\n\n"),
+            (Protocol::Responses,"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n","data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"),
+            (Protocol::Messages,"data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"partial\"}}\n\n","data: {\"type\":\"message_stop\"}\n\n"),
+        ] {
+            assert!(!summary(protocol,partial).await.terminal);
+            let complete=summary(protocol,&format!("{partial}{terminal}")).await;
+            assert!(complete.terminal);assert!(complete.failure.is_none());
+            assert!(summary(protocol,&format!("data: {{invalid\n\n{terminal}")).await.failure.is_some());
+            assert!(summary(protocol,&format!("data: {{\"type\":\"error\",\"error\":{{\"message\":\"rejected\"}}}}\n\n{terminal}")).await.failure.is_some());
+            let json=serde_json::json!({"native_marker":true});
+            assert!(!NativeSummary::from_value(protocol,&json).complete_response(protocol,&json));
+        }
+    }
+
+    #[test]
+    fn complete_json_responses_require_their_own_protocol_fields() {
+        for (protocol, value) in [
+            (
+                Protocol::Chat,
+                serde_json::json!({"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}),
+            ),
+            (
+                Protocol::Responses,
+                serde_json::json!({"status":"completed","output":[]}),
+            ),
+            (
+                Protocol::Messages,
+                serde_json::json!({"type":"message","stop_reason":"end_turn","content":[]}),
+            ),
+        ] {
+            assert!(NativeSummary::from_value(protocol, &value).complete_response(protocol, &value));
+        }
+    }
 }

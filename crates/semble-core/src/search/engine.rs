@@ -75,7 +75,13 @@ impl SearchEngine {
 
     /// Rescans source stamps and incrementally refreshes a prepared index.
     pub fn refresh(&self, repo: &Path, content: &[ContentType]) -> Result<IndexStats> {
-        let (root, identity) = self.resolve_source(repo)?;
+        let value = repo.to_string_lossy();
+        let (root, identity) = if value.starts_with("https://") || value.starts_with("http://") {
+            let remote = RemoteRepository::refresh(&value, &self.config.cache_dir)?;
+            (remote.path, remote.identity)
+        } else {
+            self.resolve_source(repo)?
+        };
         let content = normalize_content(content);
         let index = self.repository.load_or_build(&root, &identity, &content)?;
         Ok(index_stats(&index))

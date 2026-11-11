@@ -29,9 +29,9 @@ const keptAlivePages = ["/", "/calls", "/settings", "/harness/cursor", "/plugins
 const tutorialReadStorageKey = "cursor-byok:tutorial-read";
 // This repository's README is the user guide; the archived upstream docs site is not.
 const tutorialUrlByLocale = {
-  "zh-CN": "https://github.com/zkldwxz/cursor-byok/blob/main/README-CN.md",
-  "en-US": "https://github.com/zkldwxz/cursor-byok/blob/main/README.md",
-  "pt-BR": "https://github.com/zkldwxz/cursor-byok/blob/main/README.md",
+  "zh-CN": "https://github.com/gagmeng/cursor-byok/blob/main/README-CN.md",
+  "en-US": "https://github.com/gagmeng/cursor-byok/blob/main/README.md",
+  "pt-BR": "https://github.com/gagmeng/cursor-byok/blob/main/README.md",
 } as const;
 
 export function AppLayout() {

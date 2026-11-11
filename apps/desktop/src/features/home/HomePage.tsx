@@ -1,3 +1,4 @@
+//! Displays overview data only for the selected query and surfaces range failures.
 import { useEffect, useState } from "react";
 import { api, pluginText, type Overview } from "../../shared/api";
 import { ContributionCalendarChart } from "./charts/ContributionCalendarChart";
@@ -48,6 +49,8 @@ export function HomePage() {
   const [appliedModels, setAppliedModels] = useState<string[]>([]);
   const [rangeOverview, setRangeOverview] = useState<Overview | null>(null);
   const [rangeBusy, setRangeBusy] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [annualError, setAnnualError] = useState<string | null>(null);
   const [annualOverview, setAnnualOverview] = useState<Overview | null>(null);
   const [annualEnd, setAnnualEnd] = useState(Date.now());
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -57,13 +60,15 @@ export function HomePage() {
     if (!selectedRange) return;
     let active = true;
     setRangeBusy(true);
+    setRangeError(null);
+    setRangeOverview(null);
     void api.overview({
       ...selectedRange,
       modelHashes: appliedModels,
     }).then((next) => {
       if (active) setRangeOverview(next);
     }).catch((cause) => {
-      if (active) console.error(cause);
+      if (active) setRangeError(cause instanceof Error ? cause.message : String(cause));
     }).finally(() => {
       if (active) setRangeBusy(false);
     });
@@ -73,9 +78,11 @@ export function HomePage() {
   useEffect(() => {
     let active = true;
     const end = Date.now();
+    setAnnualError(null);
+    setAnnualOverview(null);
     void api.overview({ ...calendarRange(end), modelHashes: appliedModels, bucketMs: 86400000 }).then((next) => {
       if (active) { setAnnualOverview(next); setAnnualEnd(end); }
-    }).catch((cause) => { if (active) console.error(cause); });
+    }).catch((cause) => { if (active) setAnnualError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { active = false; };
   }, [overview, refreshVersion, appliedModels]);
 
@@ -153,7 +160,10 @@ export function HomePage() {
       })) : [],
     )),
   ];
-  const sections: VirtualPageSection[] = [
+  const sections: VirtualPageSection[] = rangeError || !rangeOverview ? [{
+    key: "range-status", estimatedHeight: 80,
+    content: rangeError ? <p role="alert">{t("统计加载失败：{error}，请刷新重试。", { error: rangeError })}</p> : <p role="status">{t("加载中…")}</p>,
+  }] : [
     {
       key: "daily-token-usage",
       estimatedHeight: 240,
@@ -171,7 +181,7 @@ export function HomePage() {
     {
       key: "activity",
       estimatedHeight: 106,
-      content: <ContributionCalendarChart data={contribution} />,
+      content: annualError ? <p role="alert">{t("年度活动加载失败：{error}，请刷新重试。", { error: annualError })}</p> : <ContributionCalendarChart data={contribution} />,
     },
   ];
 

@@ -1,9 +1,11 @@
+//! Presents configured models with grouped selection and virtualized keyboard navigation.
 import { autoUpdate, computePosition, flip, offset, shift, size } from "@floating-ui/dom";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconProps } from "./Icon";
 import { checkIcon, chevronDownIcon, windowCloseIcon } from "./icons";
 import { VirtualList } from "../virtual/VirtualList";
+import type { VirtualListApi } from "../virtual/virtualTypes";
 import styles from "./ModelSelect.module.scss";
 
 export type ModelSelectOption = {
@@ -75,11 +77,15 @@ export function ModelSelect(props: ModelSelectProps) {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const firstOption = useRef<HTMLLabelElement>(null);
+  const listApi = useRef<VirtualListApi | null>(null);
+  const active = useRef<string | null>(null);
+  const [activeValue, setActiveValue] = useState<string | null>(null);
+  const activate = (value: string | null) => { active.current = value; setActiveValue(value); };
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0, width: 420, maxHeight: 280 });
   const items = useMemo(() => groupedItems(options), [options]);
+  const orderedOptions = useMemo(() => items.flatMap(item => item.kind === "option" ? [item.option] : []), [items]);
   const selected = useMemo(
     () => new Set(mode === "multiple" ? props.value : [props.value]),
     [mode, props.value],
@@ -107,7 +113,6 @@ export function ModelSelect(props: ModelSelectProps) {
 
   useEffect(() => {
     if (!open) return;
-    firstOption.current?.focus();
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (!root.current?.contains(target) && !menu.current?.contains(target)) close();
@@ -115,6 +120,20 @@ export function ModelSelect(props: ModelSelectProps) {
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || activeValue === null) return;
+    menu.current?.focus({ preventScroll: true });
+    const index = items.findIndex(item => item.kind === "option" && item.option.value === activeValue);
+    listApi.current?.scrollToIndex(index, "auto");
+  }, [open, activeValue, items]);
+
+  const navigate = (key: string) => {
+    const current = orderedOptions.findIndex(option => option.value === active.current);
+    const index = key === "Home" ? 0 : key === "End" ? orderedOptions.length - 1
+      : Math.max(0, Math.min(orderedOptions.length - 1, current + (key === "ArrowDown" ? 1 : -1)));
+    activate(orderedOptions[index]?.value ?? null);
+  };
 
   const summary = mode === "multiple"
     ? props.value.length === 0 ? t("全部") : t("已选 {count} 项", { count: props.value.length })
@@ -141,6 +160,7 @@ export function ModelSelect(props: ModelSelectProps) {
 
   const openMenu = () => {
     if (disabled) return;
+    activate(orderedOptions.find(option => selected.has(option.value))?.value ?? orderedOptions[0]?.value ?? null);
     setOpen(true);
   };
 
@@ -171,17 +191,25 @@ export function ModelSelect(props: ModelSelectProps) {
     {open && createPortal(<div
       id={menuId}
       ref={menu}
+      tabIndex={0}
+      role="listbox"
+      aria-multiselectable={mode === "multiple" ? "true" : undefined}
+      aria-activedescendant={activeValue === null ? undefined : `${menuId}-${activeValue}`}
       className={styles.menu}
       aria-label={label}
       style={position}
       onPointerDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
+        else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); navigate(event.key); }
+        else if ((event.key === "Enter" || event.key === " ") && (event.target === menu.current || (event.target as HTMLElement).getAttribute("role") === "option")) {
+          const option = orderedOptions.find(option => option.value === active.current);
+          if (option) { event.preventDefault(); choose(option); }
+        }
+      }}
     >
       <div
         className={styles.listFrame}
-        role="listbox"
-        aria-label={label}
-        aria-multiselectable={mode === "multiple" ? "true" : undefined}
         style={{ height: Math.min(items.length * 32, Math.max(32, position.maxHeight - (mode === "multiple" ? 45 : 0))) }}
       ><VirtualList
           items={items}
@@ -190,8 +218,9 @@ export function ModelSelect(props: ModelSelectProps) {
           style={{ height: "100%" }}
           estimatedItemHeight={32}
           overscan={4}
+          onReady={(api) => { listApi.current = api; }}
           empty={<div className={styles.empty}>{t("暂无选项")}</div>}
-        >{(item, index) => item.kind === "group"
+        >{(item) => item.kind === "group"
           ? mode === "multiple"
             ? <GroupCheckbox
                 label={item.label}
@@ -201,17 +230,14 @@ export function ModelSelect(props: ModelSelectProps) {
               />
             : <div className={styles.groupLabel}>{item.label}</div>
           : <label
-              ref={index === 1 ? firstOption : undefined}
               className={styles.optionRow}
+              id={`${menuId}-${item.option.value}`}
+              data-value={item.option.value}
+              data-active={activeValue === item.option.value || undefined}
               role="option"
               aria-selected={selected.has(item.option.value)}
-              tabIndex={index === 1 ? 0 : -1}
-              onKeyDown={(event) => {
-                if (event.key === " " || event.key === "Enter") {
-                  event.preventDefault();
-                  choose(item.option);
-                }
-              }}
+              tabIndex={-1}
+              onPointerDown={() => activate(item.option.value)}
             >
               <input
                 type="checkbox"

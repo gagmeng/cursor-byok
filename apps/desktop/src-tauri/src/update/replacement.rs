@@ -13,7 +13,7 @@ const PID_ARG: &str = "--update-wait-pid";
 const HANDSHAKE_ARG: &str = "--update-handshake";
 pub(super) const READY_ARG: &str = "--portable-update-ready";
 const PROCESS_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
-const READY_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const READY_WAIT_TIMEOUT: Duration = Duration::from_secs(180);
 
 pub(super) struct ReplacementRequest {
     target: PathBuf,
@@ -191,13 +191,13 @@ fn restore_backup(target: &Path, backup: &Path) -> io::Result<()> {
 fn wait_until_ready(child: &mut Child, marker: &Path, timeout: Duration) -> io::Result<()> {
     let deadline = Instant::now() + timeout;
     loop {
-        if marker.is_file() {
-            return Ok(());
-        }
         if let Some(status) = child.try_wait()? {
             return Err(io::Error::other(format!(
                 "updated application exited before startup completed: {status}"
             )));
+        }
+        if marker.is_file() {
+            return Ok(());
         }
         if Instant::now() >= deadline {
             return Err(io::Error::new(
@@ -248,6 +248,33 @@ fn wait_for_process(pid: u32, timeout: Duration, handshake: &Path) -> io::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "subprocess fixture for startup failure"]
+    fn failed_startup_child() {
+        std::process::exit(3);
+    }
+
+    #[test]
+    fn a_ready_marker_cannot_hide_a_child_that_already_crashed() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("ready");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "update::replacement::tests::failed_startup_child",
+                "--ignored",
+            ])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        assert!(!child.wait().unwrap().success());
+        fs::write(&marker, b"ready").unwrap();
+        assert!(
+            wait_until_ready(&mut child, &marker, Duration::from_millis(20)).is_err(),
+            "an exited application is not a successful update even when a marker exists"
+        );
+    }
 
     #[test]
     fn staged_file_can_be_restored() {

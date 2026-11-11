@@ -8,6 +8,7 @@ import type {
   LlmCall,
   MagpieImportModel,
   Model,
+  ModelInput,
   ModelBadgeSettings,
   ModelSystemPromptSettings,
   Overview,
@@ -154,6 +155,17 @@ export function installDemoApi() {
     }
     if (/^\/models\/[^/]+\/test\/[^/]+$/.test(path) && method === "DELETE") return empty();
     if (path === "/models" && method === "GET") return json(models);
+    if (path === "/models/batch" && method === "DELETE") {
+      const hashes=new Set((body as {model_hashes:string[]}).model_hashes);
+      models=models.filter(model=>!hashes.has(model.model_hash));
+      return empty();
+    }
+    if (path === "/models/batch" && method === "PUT") {
+      const updates=(body as {models:{model_hash:string;config:ModelInput}[]}).models;
+      const saved=updates.map(update=>({...models.find(model=>model.model_hash===update.model_hash)!,...update.config,updated_at_ms:Date.now()}));
+      models=models.map(model=>saved.find(update=>update.model_hash===model.model_hash)??model);
+      return json(saved);
+    }
     if (/^\/models\/[^/]+$/.test(path) && method === "GET") return json(models.find(model => model.model_hash === path.split("/").at(-1)));
     if (path === "/models" && method === "POST") return json(models);
     if (path === "/models/discover") return json({ models: models.map((model) => model.model_id) });

@@ -36,6 +36,42 @@ pub struct SaveModels {
     pub models: Vec<ModelConfigInput>,
 }
 
+#[derive(Deserialize)]
+pub struct DeleteModels {
+    pub model_hashes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateModels {
+    pub models: Vec<UpdateModel>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateModel {
+    pub model_hash: String,
+    pub config: ModelConfigInput,
+}
+
+pub async fn remove_batch(
+    State(service): State<ControlService>,
+    Json(input): Json<DeleteModels>,
+) -> Result<StatusCode> {
+    service.store.delete_models(&input.model_hashes).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn update_batch(
+    State(service): State<ControlService>,
+    Json(input): Json<UpdateModels>,
+) -> Result<Json<Vec<ModelConfig>>> {
+    let inputs = input
+        .models
+        .into_iter()
+        .map(|model| (model.model_hash, model.config))
+        .collect::<Vec<_>>();
+    Ok(Json(service.store.update_models(&inputs).await?))
+}
+
 pub async fn list(State(service): State<ControlService>) -> Result<Json<Vec<ModelConfig>>> {
     let mut models = service.models().await?;
     for model in &mut models {

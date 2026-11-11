@@ -138,6 +138,7 @@ fn spawn_periodic_maintenance(store: crate::store::Store, shutdown: Cancellation
 impl App {
     pub async fn new(mut config: Config) -> Result<Self> {
         let store = Store::connect(&config.database_url).await?;
+        store.settle_interrupted_calls().await?;
         // Best-effort startup maintenance: dead checkpoint lineages and aged
         // wire blobs are what make the database grow without bound.
         if let Err(error) = store.prune_dead_lineages().await {
@@ -349,8 +350,9 @@ mod tests {
         .await
         .unwrap();
         let runtime = PluginRuntime::new(directory.path().join("runtime")).unwrap();
+        let plugin_data = directory.path().join("plugins/data");
         let plugins =
-            PluginRegistry::managed(store.clone(), runtime.clone(), "test".into()).unwrap();
+            PluginRegistry::for_test(store.clone(), runtime.clone(), plugin_data.clone()).unwrap();
         let clients = crate::network::NetworkClients::new(store.clone());
         let provider = std::sync::Arc::new(ProviderRouter::new(
             store.clone(),
@@ -373,7 +375,11 @@ mod tests {
             .unwrap();
         }
         let shutdown = CancellationToken::new();
-        let running = tokio::spawn(run_config_backups(service, root.clone(), shutdown.clone()));
+        let running = tokio::spawn(run_config_backups(
+            service.clone(),
+            root.clone(),
+            shutdown.clone(),
+        ));
         let path = tokio::time::timeout(Duration::from_secs(3), async {
             loop {
                 if let Some(path) = std::fs::read_dir(&root)
@@ -407,6 +413,27 @@ mod tests {
         let file: control::MigrationFile =
             serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
         assert_eq!(file.version, 3);
-        assert_eq!(std::fs::read_dir(root).unwrap().count(), 7);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 7);
+        let before = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<std::collections::BTreeSet<_>>();
+        let broken = plugin_data.join("dev.example");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(broken.join("resources-account.json"), b"{corrupt").unwrap();
+        for _ in 0..8 {
+            assert!(
+                write_config_backup(&service, &root).await.is_err(),
+                "corrupt persisted accounts must fail the entire backup"
+            );
+        }
+        let after = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            before, after,
+            "failed backups must never rotate the last complete snapshots"
+        );
     }
 }

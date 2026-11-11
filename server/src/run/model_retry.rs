@@ -23,6 +23,8 @@ mod tests {
             partial_reasoning: String::new(),
             usage: None,
             retryable,
+            emitted_tool: false,
+            terminal: false,
         }
     }
 

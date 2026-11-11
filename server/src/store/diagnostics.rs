@@ -44,6 +44,54 @@ pub struct ModelHealth {
 }
 
 impl Store {
+    pub async fn invalidate_plugin_capabilities(&self, plugin_id: &str) -> Result<()> {
+        let prefix = format!("plugin:{plugin_id}/");
+        let mut session = self.write_session().await?;
+        let mut tx = session.begin().await?;
+        sqlx::query("UPDATE model_capability_revisions SET revision=revision+1 WHERE substr(model_id,1,length(?))=?").bind(&prefix).bind(&prefix).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM model_capability_tests WHERE substr(model_id,1,length(?))=?")
+            .bind(&prefix)
+            .bind(&prefix)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        session.committed();
+        Ok(())
+    }
+    pub async fn capability_revision(&self, model_id: &str) -> Result<i64> {
+        let _write = self.writes.lock().await;
+        if !model_id.starts_with(crate::plugin::ADAPTER_ID_PREFIX)
+            && self.model(model_id).await?.is_none()
+        {
+            return Err(Error::Config(format!(
+                "capability test model does not exist: {model_id}"
+            )));
+        }
+        sqlx::query(
+            "INSERT OR IGNORE INTO model_capability_revisions(model_id, revision) VALUES (?, 0)",
+        )
+        .bind(model_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(
+            sqlx::query_scalar("SELECT revision FROM model_capability_revisions WHERE model_id=?")
+                .bind(model_id)
+                .fetch_one(&self.pool)
+                .await?,
+        )
+    }
+
+    pub async fn save_current_capability_result(
+        &self,
+        result: &CapabilityResult,
+        revision: i64,
+    ) -> Result<bool> {
+        let _write = self.writes.lock().await;
+        let saved = sqlx::query("INSERT INTO model_capability_tests(model_id, capability, status, tested_at_ms, duration_ms, detail) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM model_capability_revisions WHERE model_id=? AND revision=?) ON CONFLICT(model_id, capability) DO UPDATE SET status=excluded.status, tested_at_ms=excluded.tested_at_ms, duration_ms=excluded.duration_ms, detail=excluded.detail")
+            .bind(&result.model_id).bind(&result.capability).bind(&result.status).bind(result.tested_at_ms).bind(result.duration_ms).bind(&result.detail).bind(&result.model_id).bind(revision).execute(&self.pool).await?;
+        Ok(saved.rows_affected() == 1)
+    }
+
     pub async fn start_connection_diagnostic(&self, scope: &str) -> Result<ConnectionDiagnostic> {
         if !matches!(scope, "local" | "ssh") {
             return Err(Error::Config(format!(
@@ -122,13 +170,6 @@ impl Store {
                 })
             })
             .collect()
-    }
-
-    pub async fn save_capability_result(&self, result: &CapabilityResult) -> Result<()> {
-        let _write = self.writes.lock().await;
-        sqlx::query("INSERT INTO model_capability_tests(model_id, capability, status, tested_at_ms, duration_ms, detail) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(model_id, capability) DO UPDATE SET status=excluded.status, tested_at_ms=excluded.tested_at_ms, duration_ms=excluded.duration_ms, detail=excluded.detail")
-            .bind(&result.model_id).bind(&result.capability).bind(&result.status).bind(result.tested_at_ms).bind(result.duration_ms).bind(&result.detail).execute(&self.pool).await?;
-        Ok(())
     }
 
     pub async fn capability_results(&self) -> Result<Vec<CapabilityResult>> {

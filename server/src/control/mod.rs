@@ -129,6 +129,7 @@ pub fn api_router(service: ControlService) -> Router {
             get(models::list).post(models::create),
         )
         .route("/__byok-api__/api/models/discover", post(models::discover))
+        .route("/__byok-api__/api/models/batch", put(models::update_batch).delete(models::remove_batch))
         .route("/__byok-api__/api/magpie", get(models::magpie_preview))
         .route("/__byok-api__/api/magpie/import", post(models::magpie_import))
         .route(

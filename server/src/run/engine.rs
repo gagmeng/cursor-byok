@@ -448,11 +448,7 @@ impl RunEngine {
                         }
                         // Nothing streamed yet and the model declares a fallback:
                         // switch to it instead of retrying the same broken target.
-                        if cycle_failure.partial_text.is_empty()
-                            && cycle_failure.partial_reasoning.is_empty()
-                            && cycle_failure.retryable
-                            && failover_left > 0
-                        {
+                        if cycle_failure.can_failover() && failover_left > 0 {
                             let current = request.model.model_id.clone();
                             let fallback = match self.store.model(&current).await {
                                 Ok(Some(config)) => config.fallback_model_hash.clone(),

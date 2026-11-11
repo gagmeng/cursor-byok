@@ -458,7 +458,7 @@ mod tests {
             assert_eq!(checksum_after, checksum_before);
             assert_eq!(
                 versions,
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
             );
             let prompt_tables: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'

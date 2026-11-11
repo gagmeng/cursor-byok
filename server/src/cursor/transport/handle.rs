@@ -109,7 +109,7 @@ impl TransportHandle {
         let _ = self.commands.send(TransportCommand::Disconnect).await;
     }
 
-    pub fn subscribe(&self) -> tokio::sync::mpsc::UnboundedReceiver<Bytes> {
+    pub fn subscribe(&self) -> super::OutputSubscription {
         self.output.subscribe()
     }
 

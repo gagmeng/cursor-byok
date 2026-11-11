@@ -42,6 +42,40 @@ impl PluginDataStore {
         read_json(&path).await
     }
 
+    pub async fn resource_snapshots(&self) -> Result<Vec<(String, String, serde_json::Value)>> {
+        let mut snapshots = Vec::new();
+        let mut directories = tokio::fs::read_dir(&self.root).await?;
+        while let Some(directory) = directories.next_entry().await? {
+            if !directory.file_type().await?.is_dir() {
+                continue;
+            }
+            let plugin_id = directory.file_name().to_string_lossy().into_owned();
+            validate_component(&plugin_id, "plugin id")?;
+            let lock = self.lock(&plugin_id);
+            let _guard = lock.lock().await;
+            let mut files = tokio::fs::read_dir(directory.path()).await?;
+            while let Some(file) = files.next_entry().await? {
+                let name = file.file_name().to_string_lossy().into_owned();
+                let Some(resource_type) = name
+                    .strip_prefix("resources-")
+                    .and_then(|name| name.strip_suffix(".json"))
+                else {
+                    continue;
+                };
+                if !file.file_type().await?.is_file() {
+                    continue;
+                }
+                snapshots.push((
+                    plugin_id.clone(),
+                    resource_type.to_owned(),
+                    read_json(&file.path()).await?,
+                ));
+            }
+        }
+        snapshots.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        Ok(snapshots)
+    }
+
     pub async fn modify<T>(
         &self,
         plugin_id: &str,
@@ -54,26 +88,6 @@ impl PluginDataStore {
         let (value, result) = mutation(read_json(&path).await?)?;
         self.write_locked(&path, key, &value).await?;
         Ok(result)
-    }
-
-    pub async fn update(
-        &self,
-        plugin_id: &str,
-        key: &str,
-        value: &serde_json::Value,
-    ) -> Result<()> {
-        let path = self.path(plugin_id, key)?;
-        let lock = self.lock(plugin_id);
-        let _guard = lock.lock().await;
-        self.write_locked(&path, key, value)
-            .await
-            // 带上具体路径,Windows 上的拒绝访问才能定位到是哪一步。
-            .map_err(|error| {
-                Error::Config(format!(
-                    "plugin data write failed at {}: {error}",
-                    path.display()
-                ))
-            })
     }
 
     /// 全程使用同步 IO 在阻塞线程完成:tokio 异步文件的关闭是延迟的,
@@ -246,11 +260,9 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let store = PluginDataStore::new(root.path().join("data")).unwrap();
         store
-            .update(
-                "com.example",
-                "state",
-                &serde_json::json!({"token":"secret"}),
-            )
+            .modify("com.example", "state", |_| {
+                Ok((serde_json::json!({"token":"secret"}), ()))
+            })
             .await
             .unwrap();
         assert_eq!(

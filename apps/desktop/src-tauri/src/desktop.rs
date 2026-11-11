@@ -33,11 +33,56 @@ use crate::tray;
 pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 const AUTOSTART_ARG: &str = "--autostart";
 
+async fn wait_for_backend(address: std::net::SocketAddr, timeout: Duration) -> std::io::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    tokio::time::timeout(timeout,async {
+        loop {
+            let probe=tokio::time::timeout(Duration::from_secs(1),async {
+                let mut connection=tokio::net::TcpStream::connect(address).await?;
+                connection.write_all(b"GET /__byok-api__/healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await?;
+                let mut bytes=Vec::with_capacity(512);
+                connection.take(8192).read_to_end(&mut bytes).await?;
+                Ok::<_,std::io::Error>(bytes.starts_with(b"HTTP/1.1 200 ") || bytes.starts_with(b"HTTP/1.0 200 "))
+            }).await;
+            if matches!(probe,Ok(Ok(true))) {return Ok(());}
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }).await.map_err(|_|std::io::Error::new(std::io::ErrorKind::TimedOut,"desktop backend did not serve its health endpoint before startup timeout"))?
+}
+
 struct DesktopRuntime {
     shutdown: CancellationToken,
     server: Mutex<Option<JoinHandle<Result<()>>>>,
     exiting: AtomicBool,
     server_addr: std::net::SocketAddr,
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+    #[tokio::test]
+    async fn a_bound_port_is_not_ready_until_the_health_handler_replies() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        assert!(wait_for_backend(address, Duration::from_millis(30))
+            .await
+            .is_err());
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route(
+                    "/__byok-api__/healthz",
+                    axum::routing::get(|| async { StatusCode::OK }),
+                ),
+            )
+            .await
+            .unwrap()
+        });
+        wait_for_backend(address, Duration::from_secs(2))
+            .await
+            .unwrap();
+        server.abort();
+    }
 }
 
 #[tauri::command]
@@ -263,7 +308,16 @@ pub fn run() -> ExitCode {
                 open_main_window(app.handle())?;
             }
             tray::create(app)?;
-            crate::update::signal_ready_if_requested()?;
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = wait_for_backend(address, Duration::from_secs(120))
+                    .await
+                    .and_then(|()| crate::update::signal_ready_if_requested())
+                {
+                    tracing::error!(%error,"desktop backend did not become ready");
+                    app_handle.exit(1);
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!());

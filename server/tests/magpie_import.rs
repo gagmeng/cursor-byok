@@ -338,3 +338,65 @@ async fn an_empty_catalog_previews_as_an_empty_list() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["models"].as_array().unwrap().len(), 0);
 }
+
+#[tokio::test]
+async fn a_model_removed_since_preview_rejects_the_entire_import_without_saving_a_subset() {
+    let address = serve_gateway(catalog()).await;
+    let (_directory, store) = fixtures::temp_store().await;
+    let (status, body) = request(
+        control_router(&store).await,
+        "POST",
+        "/__byok-api__/api/magpie/import",
+        json!({"address":address,"model_ids":["zcode/GLM-5.2","provider/removed"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        store.models().await.unwrap().is_empty(),
+        "a stale catalog must ask the user to query again rather than silently import a subset"
+    );
+}
+
+#[tokio::test]
+async fn resynchronizing_keeps_renamed_magpie_models_and_their_saved_credentials() {
+    let address = serve_gateway(catalog()).await;
+    let (_directory, store) = fixtures::temp_store().await;
+    let router = control_router(&store).await;
+    let body = json!({"address":address,"model_ids":["zcode/GLM-5.2"]});
+    assert_eq!(
+        request(
+            router.clone(),
+            "POST",
+            "/__byok-api__/api/magpie/import",
+            body.clone()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let original = store.models().await.unwrap().remove(0);
+    let mut edited = cursor_server::model::ModelConfigInput::from(&original);
+    edited.display_name = "My coding model".into();
+    edited.api_key = "my-magpie-client".into();
+    store
+        .update_model(&original.model_hash, &edited)
+        .await
+        .unwrap();
+    let (_, preview) = preview(router.clone(), &address).await;
+    assert!(
+        preview["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|model| model["model_id"] == "zcode/GLM-5.2" && model["existing"] == true),
+        "sync must recognize a model after the user edits its name or key"
+    );
+    let (_, result) = request(router, "POST", "/__byok-api__/api/magpie/import", body).await;
+    assert_eq!(result["imported"], 0);
+    assert_eq!(result["skipped"], 1);
+    let saved = store.models().await.unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].model_hash, original.model_hash);
+    assert_eq!(saved[0].display_name, "My coding model");
+    assert_eq!(saved[0].api_key, "my-magpie-client");
+}

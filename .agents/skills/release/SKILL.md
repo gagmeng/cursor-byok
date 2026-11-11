@@ -9,7 +9,7 @@ Release through `.github/workflows/release.yml`. Preserve both updater formats: 
 
 ## Publication authority
 
-- Live releases belong to **this** repository, [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok). The archived upstream `leookun/cursor-byok` is not the publication authority here.
+- Live releases belong to **this** repository, [gagmeng/cursor-byok](https://github.com/gagmeng/cursor-byok). The archived upstream `leookun/cursor-byok` is not the publication authority here.
 - The release workflow accepts a tag push from the repository owner **or** a GitHub App (`name[bot]`), including Cursor cloud agents that push as `cursor[bot]`. A human collaborator who is not the owner still cannot publish under their own login.
 - Write access to push the `v*` tag is the authorization. Do not ask the owner to re-push a tag that an allowed bot already pushed.
 - Before any live mutation, require an explicit release instruction in the current task (for example “构建新版本”, “publish 1.0.3”, “push the tag”). Preparing version bumps, README, and a PR is allowed without a tag push.

@@ -25,7 +25,7 @@ export function ModelHealthPage() {
   const active = tests[selected];
   const labels = { streaming: t("流式响应"), tools: t("工具调用往返"), vision: t("图片理解"), cache: t("缓存与上下文续接") };
   const descriptions = { streaming: t("检查多次文本增量与完整结束事件。"), tools: t("检查工具参数，并模拟返回结果后继续生成；不会执行工作区工具。"), vision: t("发送一张生成的纯色图片，验证模型能识别图像内容。"), cache: t("发送两轮稳定上下文，检查续接结果和提供商报告的缓存命中。") };
-  useEffect(() => { void diagnosticsStore.refresh(); }, []);
+  useEffect(() => { void diagnosticsStore.refresh(); }, [models, plugins]);
   const testAll = async () => {
     setBatch(true);
     try { for (const capability of capabilities) { const status = await diagnosticsStore.test(selected, capability); if (!status || status === "cancelled") break; } }

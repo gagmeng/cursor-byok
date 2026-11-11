@@ -315,6 +315,19 @@ pub fn model_hash(input: &ModelConfigInput) -> Result<String> {
     Ok(hex::encode(&digest[..8]))
 }
 
+/// Magpie catalog identity survives user edits to labels and client credentials.
+pub fn magpie_model_identity(input: &ModelConfigInput) -> Result<Option<(String, String)>> {
+    if input.tooltip_data != "magpie" {
+        return Ok(None);
+    }
+    let url = Url::parse(&input.base_url)
+        .map_err(|error| Error::Config(format!("invalid Magpie gateway URL: {error}")))?;
+    Ok(Some((
+        url.origin().ascii_serialization(),
+        input.model_id.clone(),
+    )))
+}
+
 pub fn normalize_request_url(value: &str) -> Result<String> {
     let value = value.trim();
     let url = Url::parse(value)

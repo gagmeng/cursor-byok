@@ -30,6 +30,18 @@ pub struct ModelCycleFailure {
     pub partial_reasoning: String,
     pub usage: Option<Usage>,
     pub retryable: bool,
+    pub emitted_tool: bool,
+    pub terminal: bool,
+}
+
+impl ModelCycleFailure {
+    pub fn can_failover(&self) -> bool {
+        !self.emitted_tool
+            && !self.terminal
+            && self.partial_text.is_empty()
+            && self.partial_reasoning.is_empty()
+            && matches!(self.failure, RunFailure::Provider(_))
+    }
 }
 
 struct OpenTool {
@@ -85,7 +97,9 @@ pub async fn consume_model_cycle(
         let event = match next {
             Ok(event) => event,
             Err(error) => {
-                return Err(failure(error.into(), text, reasoning, usage));
+                let mut failure = failure(error.into(), text, reasoning, usage);
+                failure.emitted_tool = !tools.is_empty();
+                return Err(failure);
             }
         };
         if finish.is_some() {
@@ -291,12 +305,14 @@ pub async fn consume_model_cycle(
     }
 
     let Some(finish_reason) = finish else {
-        return Err(failure(
+        let mut failure = failure(
             RunFailure::Provider("provider stream reached EOF before Done".into()),
             text,
             reasoning,
             usage,
-        ));
+        );
+        failure.emitted_tool = !tools.is_empty();
+        return Err(failure);
     };
     let calls = tools
         .into_values()
@@ -385,6 +401,8 @@ fn failure(
         partial_reasoning,
         usage,
         retryable,
+        emitted_tool: false,
+        terminal: false,
     })
 }
 
@@ -415,6 +433,8 @@ fn terminal_failure(
         partial_reasoning,
         usage,
         retryable: false,
+        emitted_tool: false,
+        terminal: true,
     })
 }
 
@@ -426,6 +446,39 @@ mod tests {
         provider::{FinishReason, ModelEvent},
     };
     use tokio_stream::wrappers::ReceiverStream;
+
+    #[tokio::test]
+    async fn already_streamed_tools_and_output_limits_cannot_switch_to_another_model() {
+        for events in [
+            vec![
+                Ok(ModelEvent::Start {
+                    model_call_id: "call".into(),
+                }),
+                Ok(ModelEvent::ToolCallStart {
+                    index: 0,
+                    call_id: "tool".into(),
+                    name: "read_file".into(),
+                }),
+                Err(crate::Error::Provider("OpenAI 401: rejected".into())),
+            ],
+            vec![
+                Ok(ModelEvent::Start {
+                    model_call_id: "call".into(),
+                }),
+                Ok(ModelEvent::Done(FinishReason::Length)),
+            ],
+        ] {
+            let (sender, _receiver) = mpsc::channel(32);
+            let failure = consume_model_cycle(
+                Box::pin(tokio_stream::iter(events)),
+                &sender,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+            assert!(!failure.can_failover(), "a different model cannot continue an emitted tool call or bypass an explicit output limit");
+        }
+    }
 
     #[tokio::test]
     async fn provider_tool_names_are_normalized_when_received() {

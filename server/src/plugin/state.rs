@@ -218,6 +218,10 @@ pub struct UpsertOutcome {
 }
 
 impl PluginStateStore {
+    pub async fn resource_snapshots(&self) -> Result<Vec<(String, String, serde_json::Value)>> {
+        self.data.resource_snapshots().await
+    }
+
     pub fn new(data: PluginDataStore) -> Self {
         Self { data }
     }
@@ -358,23 +362,25 @@ impl PluginStateStore {
         provider_id: &str,
         models: &[StoredModel],
     ) -> Result<()> {
-        let previous = self.models(plugin_id, provider_id).await?;
-        let models = models
-            .iter()
-            .cloned()
-            .map(|mut model| {
-                if let Some(old) = previous.iter().find(|old| old.id == model.id) {
-                    model.enabled = old.enabled;
-                }
-                model
-            })
-            .collect::<Vec<_>>();
         self.data
-            .update(
-                plugin_id,
-                &model_key(provider_id),
-                &serde_json::to_value(models)?,
-            )
+            .modify(plugin_id, &model_key(provider_id), |value| {
+                let previous: Vec<StoredModel> = if value.is_null() {
+                    Vec::new()
+                } else {
+                    serde_json::from_value(value)?
+                };
+                let models = models
+                    .iter()
+                    .cloned()
+                    .map(|mut model| {
+                        if let Some(old) = previous.iter().find(|old| old.id == model.id) {
+                            model.enabled = old.enabled;
+                        }
+                        model
+                    })
+                    .collect::<Vec<_>>();
+                Ok((serde_json::to_value(models)?, ()))
+            })
             .await
     }
 
@@ -385,18 +391,20 @@ impl PluginStateStore {
         model_id: &str,
         enabled: bool,
     ) -> Result<()> {
-        let mut models = self.models(plugin_id, provider_id).await?;
-        let model = models
-            .iter_mut()
-            .find(|model| model.id == model_id)
-            .ok_or_else(|| Error::RunNotFound(format!("plugin model {model_id}")))?;
-        model.enabled = enabled;
         self.data
-            .update(
-                plugin_id,
-                &model_key(provider_id),
-                &serde_json::to_value(models)?,
-            )
+            .modify(plugin_id, &model_key(provider_id), |value| {
+                let mut models: Vec<StoredModel> = if value.is_null() {
+                    Vec::new()
+                } else {
+                    serde_json::from_value(value)?
+                };
+                let model = models
+                    .iter_mut()
+                    .find(|model| model.id == model_id)
+                    .ok_or_else(|| Error::RunNotFound(format!("plugin model {model_id}")))?;
+                model.enabled = enabled;
+                Ok((serde_json::to_value(models)?, ()))
+            })
             .await
     }
 
@@ -447,6 +455,39 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let data = PluginDataStore::for_test(root.path().join("data")).unwrap();
         (root, PluginStateStore::new(data))
+    }
+
+    #[tokio::test]
+    async fn concurrent_model_toggles_preserve_every_users_choice() {
+        let (_root, store) = store();
+        let models=(0..12).map(|index| StoredModel::from_definition(&serde_json::json!({"id":format!("m{index}"),"displayName":format!("M{index}")})).unwrap()).collect::<Vec<_>>();
+        store
+            .replace_models("dev.example", "provider", &models)
+            .await
+            .unwrap();
+        let tasks = (0..12)
+            .map(|index| {
+                let store = store.clone();
+                tokio::spawn(async move {
+                    store
+                        .set_model_enabled("dev.example", "provider", &format!("m{index}"), false)
+                        .await
+                        .unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        for task in tasks {
+            task.await.unwrap();
+        }
+        assert!(
+            store
+                .models("dev.example", "provider")
+                .await
+                .unwrap()
+                .iter()
+                .all(|model| !model.enabled),
+            "concurrent toggles must not restore another model's old enabled flag"
+        );
     }
 
     #[tokio::test]

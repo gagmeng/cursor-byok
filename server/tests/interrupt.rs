@@ -6,7 +6,6 @@ mod fixtures;
 
 use std::sync::Arc;
 
-use bytes::Bytes;
 use cursor_server::{
     cursor::prompting::{PromptAssets, PromptCompiler},
     cursor::protocol::{connect, proto::agent::v1 as pb},
@@ -1690,7 +1689,7 @@ fn tool_response(call_id: &str, name: &str, arguments: &str) -> Vec<ModelEvent> 
 
 async fn wait_for_exec(
     handle: &cursor_server::cursor::TransportHandle,
-    output: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    output: &mut cursor_server::cursor::transport::OutputSubscription,
     append_seqno: &mut i64,
     tool: &str,
 ) -> u32 {
@@ -1718,7 +1717,7 @@ async fn wait_for_exec(
 
 async fn drain_successfully(
     handle: &cursor_server::cursor::TransportHandle,
-    output: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    output: &mut cursor_server::cursor::transport::OutputSubscription,
     append_seqno: &mut i64,
 ) {
     loop {
@@ -1814,7 +1813,7 @@ async fn run_to_end(
 
 async fn wait_for_turn_ended(
     handle: &cursor_server::cursor::TransportHandle,
-    output: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    output: &mut cursor_server::cursor::transport::OutputSubscription,
     append_seqno: &mut i64,
 ) {
     loop {
@@ -1842,7 +1841,7 @@ async fn wait_for_turn_ended(
 
 async fn assert_transport_remains_open(
     handle: &cursor_server::cursor::TransportHandle,
-    output: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    output: &mut cursor_server::cursor::transport::OutputSubscription,
     append_seqno: &mut i64,
 ) {
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(100);

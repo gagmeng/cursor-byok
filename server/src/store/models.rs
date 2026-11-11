@@ -4,7 +4,10 @@ use std::{collections::HashSet, str::FromStr};
 use sqlx::{Row, SqliteConnection};
 
 use crate::{
-    model::{model_hash, normalize_model_input, ModelConfig, ModelConfigInput, ModelType},
+    model::{
+        magpie_model_identity, model_hash, normalize_model_input, ModelConfig, ModelConfigInput,
+        ModelType,
+    },
     Error, Result,
 };
 
@@ -131,13 +134,19 @@ impl Store {
             insert_model(&mut transaction, identity, input, now).await?;
         }
         validate_fallbacks(&mut transaction).await?;
-        transaction.commit().await?;
-        session.committed();
-
         let mut saved = Vec::with_capacity(normalized.len());
         for (hash, _) in normalized {
-            saved.push(self.model(&hash).await?.expect("inserted model must exist"));
+            saved.push(model_from_row(
+                sqlx::query(&format!(
+                    "SELECT {MODEL_COLUMNS} FROM model_configs WHERE model_hash=?"
+                ))
+                .bind(hash)
+                .fetch_one(&mut *transaction)
+                .await?,
+            )?);
         }
+        transaction.commit().await?;
+        session.committed();
         Ok(saved)
     }
 
@@ -157,16 +166,26 @@ impl Store {
         let existing = sqlx::query(&format!("SELECT {MODEL_COLUMNS} FROM model_configs"))
             .fetch_all(&mut *transaction)
             .await?;
-        let fingerprints = existing
+        let existing = existing
             .into_iter()
             .map(model_from_row)
+            .collect::<Result<Vec<_>>>()?;
+        let magpie = existing
+            .iter()
+            .map(|model| magpie_model_identity(&ModelConfigInput::from(model)))
             .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<HashSet<_>>();
+        let fingerprints = existing
             .iter()
             .map(|model| model_hash(&ModelConfigInput::from(model)))
             .collect::<Result<HashSet<_>>>()?;
         let mut inserted = 0;
         for (fingerprint, input) in &normalized {
-            if fingerprints.contains(fingerprint) {
+            if fingerprints.contains(fingerprint)
+                || magpie_model_identity(input)?.is_some_and(|identity| magpie.contains(&identity))
+            {
                 continue;
             }
             let identity = uuid::Uuid::new_v4().simple().to_string();
@@ -179,109 +198,173 @@ impl Store {
         Ok(inserted)
     }
 
-    pub async fn update_model(
-        &self,
-        current_hash: &str,
-        input: &ModelConfigInput,
-    ) -> Result<ModelConfig> {
-        let current = self
-            .model(current_hash)
-            .await?
-            .ok_or_else(|| Error::RunNotFound(format!("model {current_hash}")))?;
-        let input = normalize_model_input(input)?;
-        let next_hash = current.model_hash.clone();
-        let now = now_ms();
-        let mut session = self.write_session().await?;
-        let mut transaction = session.begin().await?;
-        let result = sqlx::query(
-            r#"UPDATE model_configs SET
-                model_hash = ?, sort_order = ?, display_name = ?, group_name = ?, fallback_model_hash = ?, model_type = ?, base_url = ?,
-                use_full_url = ?, api_key = ?, tooltip_data = ?, model_id = ?, reasoning_effort = ?,
-                openai_endpoint = ?, openai_extra_params_enabled = ?, openai_extra_params_json = ?,
-                custom_headers_enabled = ?, custom_headers_json = ?,
-                anthropic_extra_params_enabled = ?, anthropic_extra_params_json = ?,
-                context_window_tokens = ?, max_completion_tokens = ?, anthropic_max_tokens = ?,
-                anthropic_thinking_effort = ?, thinking_budget_tokens = ?, updated_at_ms = ?
-            WHERE model_hash = ?"#,
-        )
-        .bind(&next_hash)
-        .bind(input.sort_order)
-        .bind(&input.display_name)
-        .bind(&input.group_name)
-        .bind(&input.fallback_model_hash)
-        .bind(input.model_type.as_str())
-        .bind(&input.base_url)
-        .bind(input.use_full_url)
-        .bind(&input.api_key)
-        .bind(&input.tooltip_data)
-        .bind(&input.model_id)
-        .bind(&input.reasoning_effort)
-        .bind(&input.openai_endpoint)
-        .bind(input.openai_extra_params_enabled)
-        .bind(serde_json::to_string(&input.openai_extra_params)?)
-        .bind(input.custom_headers_enabled)
-        .bind(serde_json::to_string(&input.custom_headers)?)
-        .bind(input.anthropic_extra_params_enabled)
-        .bind(serde_json::to_string(&input.anthropic_extra_params)?)
-        .bind(input.context_window_tokens.map(to_i64).transpose()?)
-        .bind(input.max_completion_tokens.map(to_i64).transpose()?)
-        .bind(input.anthropic_max_tokens.map(to_i64).transpose()?)
-        .bind(&input.anthropic_thinking_effort)
-        .bind(input.thinking_budget_tokens.map(to_i64).transpose()?)
-        .bind(now)
-        .bind(current_hash)
-        .execute(&mut *transaction)
-        .await?;
-        if result.rows_affected() != 1 {
-            return Err(Error::RunNotFound(format!("model {current_hash}")));
-        }
-        sqlx::query("DELETE FROM model_capability_tests WHERE model_id = ?")
-            .bind(current_hash)
-            .execute(&mut *transaction)
-            .await?;
-        validate_fallbacks(&mut transaction).await?;
-        transaction.commit().await?;
-        session.committed();
+    pub async fn update_model(&self, hash: &str, input: &ModelConfigInput) -> Result<ModelConfig> {
         Ok(self
-            .model(&next_hash)
+            .update_models(&[(hash.to_owned(), input.clone())])
             .await?
-            .expect("updated model must exist"))
+            .remove(0))
+    }
+
+    pub async fn update_models(
+        &self,
+        models: &[(String, ModelConfigInput)],
+    ) -> Result<Vec<ModelConfig>> {
+        if models.is_empty() {
+            return Err(Error::Config("at least one model is required".into()));
+        }
+        let mut identities = HashSet::new();
+        let inputs = models
+            .iter()
+            .map(|(hash, input)| {
+                if !identities.insert(hash) {
+                    return Err(Error::Config(format!("batch update repeats model {hash}")));
+                }
+                Ok((hash, normalize_model_input(input)?))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut session = self.write_session().await?;
+        let mut tx = session.begin().await?;
+        let now = now_ms();
+        for (hash, input) in &inputs {
+            update_model_tx(&mut tx, hash, input, now).await?;
+        }
+        validate_fallbacks(&mut tx).await?;
+        let mut saved = Vec::new();
+        for (hash, _) in inputs {
+            saved.push(model_from_row(
+                sqlx::query(&format!(
+                    "SELECT {MODEL_COLUMNS} FROM model_configs WHERE model_hash=?"
+                ))
+                .bind(hash)
+                .fetch_one(&mut *tx)
+                .await?,
+            )?);
+        }
+        tx.commit().await?;
+        session.committed();
+        Ok(saved)
     }
 
     pub async fn delete_model(&self, hash: &str) -> Result<()> {
+        self.delete_models(&[hash.to_owned()]).await
+    }
+
+    pub async fn delete_models(&self, hashes: &[String]) -> Result<()> {
+        if hashes.is_empty() {
+            return Err(Error::Config("at least one model is required".into()));
+        }
+        let targets: HashSet<&str> = hashes.iter().map(String::as_str).collect();
         let mut session = self.write_session().await?;
-        let mut transaction = session.begin().await?;
-        let fallback_users: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM model_configs WHERE fallback_model_hash = ?")
+        let mut tx = session.begin().await?;
+        for hash in &targets {
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM model_configs WHERE model_hash=?)")
+                    .bind(hash)
+                    .fetch_one(&mut *tx)
+                    .await?;
+            if !exists {
+                return Err(Error::RunNotFound(format!("model {hash}")));
+            }
+            let users: Vec<String> = sqlx::query_scalar(
+                "SELECT model_hash FROM model_configs WHERE fallback_model_hash=?",
+            )
+            .bind(hash)
+            .fetch_all(&mut *tx)
+            .await?;
+            let settings_users:i64=sqlx::query_scalar("SELECT COUNT(*) FROM service_settings WHERE (setting_key='commit_settings' AND json_extract(value_json,'$.model_id')=?) OR (setting_key='auto_review_model' AND json_extract(value_json,'$')=?)").bind(hash).bind(hash).fetch_one(&mut *tx).await?;
+            if settings_users > 0 || users.iter().any(|id| !targets.contains(id.as_str())) {
+                return Err(Error::Config(format!(
+                    "model {hash} is still referenced by fallback, Commit, or auto-review settings"
+                )));
+            }
+        }
+        for hash in &targets {
+            sqlx::query("UPDATE model_configs SET fallback_model_hash=NULL WHERE model_hash=?")
                 .bind(hash)
-                .fetch_one(&mut *transaction)
+                .execute(&mut *tx)
                 .await?;
-        let settings_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service_settings WHERE (setting_key = 'commit_settings' AND json_extract(value_json, '$.model_id') = ?) OR (setting_key = 'auto_review_model' AND json_extract(value_json, '$') = ?)").bind(hash).bind(hash).fetch_one(&mut *transaction).await?;
-        if fallback_users + settings_users > 0 {
-            return Err(Error::Config(format!(
-                "model {hash} is still referenced by fallback, Commit, or auto-review settings"
-            )));
         }
-        sqlx::query("UPDATE llm_calls SET model_hash = NULL WHERE model_hash = ?")
-            .bind(hash)
-            .execute(&mut *transaction)
-            .await?;
-        let result = sqlx::query("DELETE FROM model_configs WHERE model_hash = ?")
-            .bind(hash)
-            .execute(&mut *transaction)
-            .await?;
-        if result.rows_affected() != 1 {
-            return Err(Error::RunNotFound(format!("model {hash}")));
+        for hash in &targets {
+            sqlx::query("UPDATE llm_calls SET model_hash=NULL WHERE model_hash=?")
+                .bind(hash)
+                .execute(&mut *tx)
+                .await?;
+            super::model_system_prompts::remove(&mut tx, hash).await?;
+            invalidate_capabilities(&mut tx, hash).await?;
+            sqlx::query("DELETE FROM model_capability_tests WHERE model_id=?")
+                .bind(hash)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM model_configs WHERE model_hash=?")
+                .bind(hash)
+                .execute(&mut *tx)
+                .await?;
         }
-        super::model_system_prompts::remove(&mut transaction, hash).await?;
-        sqlx::query("DELETE FROM model_capability_tests WHERE model_id = ?")
-            .bind(hash)
-            .execute(&mut *transaction)
-            .await?;
-        transaction.commit().await?;
+        tx.commit().await?;
         session.committed();
         Ok(())
     }
+}
+
+async fn update_model_tx(
+    tx: &mut SqliteConnection,
+    hash: &str,
+    input: &ModelConfigInput,
+    now: i64,
+) -> Result<()> {
+    let result = sqlx::query(
+        r#"UPDATE model_configs SET
+        model_hash = ?, sort_order = ?, display_name = ?, group_name = ?, fallback_model_hash = ?, model_type = ?, base_url = ?,
+        use_full_url = ?, api_key = ?, tooltip_data = ?, model_id = ?, reasoning_effort = ?,
+        openai_endpoint = ?, openai_extra_params_enabled = ?, openai_extra_params_json = ?,
+        custom_headers_enabled = ?, custom_headers_json = ?,
+        anthropic_extra_params_enabled = ?, anthropic_extra_params_json = ?,
+        context_window_tokens = ?, max_completion_tokens = ?, anthropic_max_tokens = ?,
+        anthropic_thinking_effort = ?, thinking_budget_tokens = ?, updated_at_ms = ?
+        WHERE model_hash = ?"#,
+    )
+    .bind(hash)
+    .bind(input.sort_order)
+    .bind(&input.display_name)
+    .bind(&input.group_name)
+    .bind(&input.fallback_model_hash)
+    .bind(input.model_type.as_str())
+    .bind(&input.base_url)
+    .bind(input.use_full_url)
+    .bind(&input.api_key)
+    .bind(&input.tooltip_data)
+    .bind(&input.model_id)
+    .bind(&input.reasoning_effort)
+    .bind(&input.openai_endpoint)
+    .bind(input.openai_extra_params_enabled)
+    .bind(serde_json::to_string(&input.openai_extra_params)?)
+    .bind(input.custom_headers_enabled)
+    .bind(serde_json::to_string(&input.custom_headers)?)
+    .bind(input.anthropic_extra_params_enabled)
+    .bind(serde_json::to_string(&input.anthropic_extra_params)?)
+    .bind(input.context_window_tokens.map(to_i64).transpose()?)
+    .bind(input.max_completion_tokens.map(to_i64).transpose()?)
+    .bind(input.anthropic_max_tokens.map(to_i64).transpose()?)
+    .bind(&input.anthropic_thinking_effort)
+    .bind(input.thinking_budget_tokens.map(to_i64).transpose()?)
+    .bind(now)
+    .bind(hash)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() != 1 {
+        return Err(Error::RunNotFound(format!("model {hash}")));
+    }
+    sqlx::query("DELETE FROM model_capability_tests WHERE model_id = ?")
+        .bind(hash)
+        .execute(&mut *tx)
+        .await?;
+    invalidate_capabilities(tx, hash).await?;
+    Ok(())
+}
+
+async fn invalidate_capabilities(tx: &mut SqliteConnection, model_id: &str) -> Result<()> {
+    sqlx::query("INSERT INTO model_capability_revisions(model_id, revision) VALUES (?, 1) ON CONFLICT(model_id) DO UPDATE SET revision=revision+1").bind(model_id).execute(&mut *tx).await?;
+    Ok(())
 }
 
 async fn validate_fallbacks(tx: &mut SqliteConnection) -> Result<()> {

@@ -616,7 +616,7 @@ fn read_result(id: u32) -> pb::AgentClientMessage {
 }
 
 async fn next_message(
-    output: &mut tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
+    output: &mut cursor_server::cursor::transport::OutputSubscription,
 ) -> pb::AgentServerMessage {
     let frame = tokio::time::timeout(std::time::Duration::from_secs(5), output.recv())
         .await

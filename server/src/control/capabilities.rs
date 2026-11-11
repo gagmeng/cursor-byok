@@ -34,6 +34,15 @@ impl ControlService {
         test_id: &str,
         capability: Capability,
     ) -> Result<CapabilityResult> {
+        let plugin_model = model_id.starts_with(crate::plugin::ADAPTER_ID_PREFIX);
+        let revision = if plugin_model {
+            self.plugins.capability_revision(model_id).await?
+        } else {
+            self.store.model(model_id).await?.ok_or_else(|| {
+                Error::Config(format!("capability test model does not exist: {model_id}"))
+            })?;
+            self.store.capability_revision(model_id).await?
+        };
         let cancellation = CancellationToken::new();
         {
             let mut tests = self
@@ -74,7 +83,7 @@ impl ControlService {
             Err(Error::Cancelled) => ("cancelled", "test cancelled".into()),
             Err(error) => ("failed", error.to_string()),
         };
-        let result = CapabilityResult {
+        let mut result = CapabilityResult {
             model_id: model_id.into(),
             capability: capability.as_str().into(),
             status: status.into(),
@@ -82,7 +91,19 @@ impl ControlService {
             duration_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
             detail,
         };
-        self.store.save_capability_result(&result).await?;
+        let saved = if plugin_model {
+            self.plugins
+                .save_capability_result(&result, revision)
+                .await?
+        } else {
+            self.store
+                .save_current_capability_result(&result, revision)
+                .await?
+        };
+        if !saved {
+            result.status = "inconclusive".into();
+            result.detail = "model configuration changed while the capability test was running; run the test again".into();
+        }
         Ok(result)
     }
 

@@ -52,6 +52,8 @@ export function CursorSettingsPage() {
   const [groupNameDraft, setGroupNameDraft] = useState("");
   const [groupBaseUrlDraft, setGroupBaseUrlDraft] = useState("");
   const [groupApiKeyDraft, setGroupApiKeyDraft] = useState("");
+  const [magpieGroupAddress, setMagpieGroupAddress] = useState<string | null>(null);
+  const groupSettingsSession = useRef(0);
   const [groupSettingsBusy, setGroupSettingsBusy] = useState(false);
   const magpieImport = useMagpieModelImport();
   const [badgeSettings, setBadgeSettings] = useState<ModelBadgeSettings | null>(null);
@@ -262,22 +264,22 @@ export function CursorSettingsPage() {
     setGroupBaseUrlDraft(sharedValue(group.models.map((model) => model.base_url)) ?? "");
     setGroupApiKeyDraft("");
     setSettingsGroup(group);
+    setMagpieGroupAddress(null);
+    const session = ++groupSettingsSession.current;
+    void Promise.all(group.models.map(model => api.model(model.model_hash))).then(models => {
+      if (session !== groupSettingsSession.current) return;
+      const magpie = models.find(model => model.tooltip_data === "magpie" || model.api_key === "magpie-cursor-byok");
+      if (magpie) setMagpieGroupAddress(new URL(magpie.base_url).host);
+    }).catch(cause => message(errorText(cause)));
   };
   const deleteGroup = async (group: CursorModelGroup) => {
     setDeletingGroup(null);
-    // 逐个删除而不是新开一个批量接口:每个模型各自有既有删除语义
-    // (清理系统提示词、解绑调用记录),复用它不会漏掉任何级联。
-    const failures = [];
-    for (const model of group.models) {
-      try {
-        await api.deleteModel(model.model_hash);
-      } catch (cause) {
-        failures.push(errorText(cause));
-      }
-    }
-    await appStore.refresh();
-    if (failures.length > 0) {
-      message(t("分组中 {failed} 个模型删除失败：{error}", { failed: failures.length, error: failures[0] }));
+    try {
+      await api.deleteModels(group.models.map(model => model.model_hash));
+      await appStore.refresh();
+    } catch (cause) {
+      message(errorText(cause));
+      await appStore.refresh();
       return;
     }
     message(t("已删除分组「{name}」的 {count} 个模型", { name: group.label, count: group.models.length }));
@@ -289,6 +291,7 @@ export function CursorSettingsPage() {
     const api_key = groupApiKeyDraft.trim();
     setGroupSettingsBusy(true);
     try {
+      const updates = [];
       for (const listed of settingsGroup.models) {
         const model = await api.model(listed.model_hash);
         const input: ModelInput = {
@@ -300,8 +303,9 @@ export function CursorSettingsPage() {
         if (input.group_name === (model.group_name ?? null)
           && input.base_url === model.base_url
           && input.api_key === model.api_key) continue;
-        await api.updateModel(model.model_hash, input);
+        updates.push({model_hash: model.model_hash, config: input});
       }
+      if (updates.length) await api.updateModels(updates);
       await appStore.refresh();
       setSettingsGroup(null);
     } catch (cause) {
@@ -500,7 +504,14 @@ export function CursorSettingsPage() {
     <Modal open={badgeOpen} title={t("模型显示设置")} busy={badgeBusy} onClose={() => setBadgeOpen(false)} onSubmit={() => void saveBadgeSettings()} submitLabel={t("保存")}>
       <CursorBadgeSettings settings={badgeDraft} sample={models[0] ?? null} onChange={setBadgeDraft} />
     </Modal>
-    <Modal open={settingsGroup !== null} title={t("分组设置")} busy={groupSettingsBusy || cursorBusy} onClose={() => setSettingsGroup(null)} onSubmit={() => void saveGroupSettings()} submitLabel={t("保存")}>
+    <Modal open={settingsGroup !== null} title={t("分组设置")} busy={groupSettingsBusy || cursorBusy} onClose={() => {groupSettingsSession.current += 1; setSettingsGroup(null);}} onSubmit={() => void saveGroupSettings()} submitLabel={t("保存")} secondaryAction={magpieGroupAddress && <button
+      type="button" className={controls.secondary} disabled={groupSettingsBusy || magpieImport.busy}
+      onClick={() => {
+        groupSettingsSession.current += 1;
+        setSettingsGroup(null);
+        magpieImport.start(magpieGroupAddress);
+      }}
+    >{t("同步模型")}</button>}>
       {settingsGroup && <div className={styles.editor}>
         <FormField label={t("分组名称")} hint={t("应用于该分组下的全部模型，并作为 Cursor 模型选择器中的徽章标签；清空则恢复显示服务器域名。")}>
           <TextInput placeholder={settingsGroup.key} value={groupNameDraft} onChange={(event) => setGroupNameDraft(event.target.value)} />

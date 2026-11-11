@@ -4,12 +4,12 @@
 
 运行在本机的 Cursor 后端：用你自己的模型 API，保留 Agent 工具、Skills 和 MCP。
 
-[English README](./README.md) · [下载](https://github.com/zkldwxz/cursor-byok/releases/latest) · [Telegram](https://t.me/cursor_byok)
+[English README](./README.md) · [下载](https://github.com/gagmeng/cursor-byok/releases/latest) · [Telegram](https://t.me/cursor_byok)
 
-[![Release](https://img.shields.io/github/v/release/zkldwxz/cursor-byok?style=flat-square)](https://github.com/zkldwxz/cursor-byok/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/zkldwxz/cursor-byok/total?style=flat-square)](https://github.com/zkldwxz/cursor-byok/releases)
-[![License](https://img.shields.io/github/license/zkldwxz/cursor-byok?style=flat-square)](./LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/zkldwxz/cursor-byok/releases/latest)
+[![Release](https://img.shields.io/github/v/release/gagmeng/cursor-byok?style=flat-square)](https://github.com/gagmeng/cursor-byok/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/gagmeng/cursor-byok/total?style=flat-square)](https://github.com/gagmeng/cursor-byok/releases)
+[![License](https://img.shields.io/github/license/gagmeng/cursor-byok?style=flat-square)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/gagmeng/cursor-byok/releases/latest)
 
 </div>
 
@@ -23,7 +23,7 @@
 
 API Key 和设置只存在本机。模型流量仍会发往你选择的上游。本项目是独立项目，与 Cursor 官方没有关联。
 
-当前维护和发版仓库是 [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok)。与已归档上游的关系见 [本仓库与上游](#本仓库与上游)。
+当前维护和发版仓库是 [gagmeng/cursor-byok](https://github.com/gagmeng/cursor-byok)。与已归档上游的关系见 [本仓库与上游](#本仓库与上游)。
 
 ## 功能
 
@@ -39,7 +39,7 @@ API Key 和设置只存在本机。模型流量仍会发往你选择的上游。
 
 ## 快速开始
 
-1. 从 [GitHub Releases](https://github.com/zkldwxz/cursor-byok/releases/latest) 下载对应系统的安装包。
+1. 从 [GitHub Releases](https://github.com/gagmeng/cursor-byok/releases/latest) 下载对应系统的安装包。
 2. 打开 cursor-byok → **连接诊断**，按引导初始化并信任本地 CA。全新配置会自动进入该页，也可以稍后完成。
 3. 在模型设置中添加模型（服务地址、API Key、模型名称），保存并运行 **测试**。
 4. 保持 cursor-byok 运行。
@@ -164,7 +164,7 @@ make check            # fmt、clippy、测试、前端检查，与 CI 相同
 
 cursor-byok 由 [leookun](https://github.com/leookun) 在 [leookun/cursor-byok](https://github.com/leookun/cursor-byok) 创建。该仓库已于 **2026 年 10 月归档**。
 
-**本仓库是后续维护点：** 修复、ZCode、存储与瘦身、更新签名、GitHub Release 都在 [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok) 发布。安装包和 `latest.json` / `update.json` 指向这里。
+**本仓库是后续维护点：** 修复、ZCode、存储与瘦身、更新签名、GitHub Release 都在 [gagmeng/cursor-byok](https://github.com/gagmeng/cursor-byok) 发布。安装包和 `latest.json` / `update.json` 指向这里。
 
 原仓库的 MIT 代码仍是基础。致谢原作者和上游贡献者；本仓库在那棵提交树上继续维护。
 

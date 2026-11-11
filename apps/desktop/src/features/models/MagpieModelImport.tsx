@@ -1,3 +1,4 @@
+//! Reads a Magpie gateway catalog and imports the models selected by the user.
 import { useMemo, useRef, useState } from "react";
 import { api, type MagpieImportModel, type MagpieImportPreview } from "../../shared/api";
 import { appStore } from "../../shared/store/appStore";
@@ -41,8 +42,8 @@ export type MagpieModelImport = {
   collapsed: ReadonlySet<string>;
   selectableCount: number;
   selectedNew: number;
-  /** 打开弹窗;不发起任何网络请求,查询由用户点击触发。 */
-  start: () => void;
+  /** 打开弹窗;分组同步提供已保存地址并立即查询。 */
+  start: (address?: string) => void;
   close: () => void;
   setAddress: (address: string) => void;
   /** 用当前地址查询网关目录。 */
@@ -65,22 +66,28 @@ export function useMagpieModelImport(): MagpieModelImport {
   const [importing, setImporting] = useState(false);
   // 每次打开、关闭或重新查询都会推进世代:晚到的旧响应属于上一个生命周期,必须丢弃。
   const generation = useRef(0);
+  const importPending = useRef(false);
 
   const groups = useMemo(() => groupByProvider(preview?.models ?? []), [preview]);
   const selectable = useMemo(() => (preview?.models ?? []).filter((model) => !model.existing), [preview]);
   const selectedNew = selectable.filter((model) => selected.has(model.model_id)).length;
 
-  const start = () => {
+  const start = (target?: string) => {
+    if (importPending.current) return;
     generation.current += 1;
     setOpen(true);
     setPreview(null);
     setSelected(new Set());
     setCollapsed(new Set());
     setPreviewing(false);
+    if (target) {
+      setAddressState(target);
+      queryAddress(target);
+    }
   };
 
   const close = () => {
-    if (importing) return;
+    if (importPending.current) return;
     generation.current += 1;
     setOpen(false);
     setPreview(null);
@@ -88,6 +95,9 @@ export function useMagpieModelImport(): MagpieModelImport {
   };
 
   const setAddress = (value: string) => {
+    if (importPending.current) return;
+    generation.current += 1;
+    setPreviewing(false);
     setAddressState(value);
     // 地址变了,上一次的结果就不再对应当前输入,免得用户对着旧列表点导入。
     setPreview(null);
@@ -95,9 +105,11 @@ export function useMagpieModelImport(): MagpieModelImport {
     setCollapsed(new Set());
   };
 
-  const query = () => {
-    const current = generation.current;
-    const target = address.trim();
+  const queryAddress = (target: string) => {
+    if (importPending.current) return;
+    const current = ++generation.current;
+    setPreview(null);
+    setSelected(new Set());
     void (async () => {
       try {
         setPreviewing(true);
@@ -118,6 +130,7 @@ export function useMagpieModelImport(): MagpieModelImport {
       }
     })();
   };
+  const query = () => queryAddress(address.trim());
 
   const toggle = (modelId: string, checked: boolean) => {
     setSelected((current) => {
@@ -150,12 +163,13 @@ export function useMagpieModelImport(): MagpieModelImport {
   };
 
   const confirm = () => {
-    if (!preview) return;
+    if (!preview || importPending.current || previewing || selectedNew === 0) return;
+    importPending.current = true;
     void (async () => {
       try {
         setImporting(true);
         const result = await appStore.importMagpieModels(
-          preview.models.filter((model) => selected.has(model.model_id)).map((model) => model.model_id),
+          preview.models.filter((model) => !model.existing && selected.has(model.model_id)).map((model) => model.model_id),
           preview.address,
         );
         if (!result) {
@@ -172,6 +186,7 @@ export function useMagpieModelImport(): MagpieModelImport {
       } catch (cause) {
         message(errorText(cause));
       } finally {
+        importPending.current = false;
         setImporting(false);
       }
     })();

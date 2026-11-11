@@ -4,12 +4,12 @@
 
 A local backend for Cursor: bring your own model APIs, keep Agent tools, Skills, and MCP.
 
-[中文说明](./README-CN.md) · [Download](https://github.com/zkldwxz/cursor-byok/releases/latest) · [Telegram](https://t.me/cursor_byok)
+[中文说明](./README-CN.md) · [Download](https://github.com/gagmeng/cursor-byok/releases/latest) · [Telegram](https://t.me/cursor_byok)
 
-[![Release](https://img.shields.io/github/v/release/zkldwxz/cursor-byok?style=flat-square)](https://github.com/zkldwxz/cursor-byok/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/zkldwxz/cursor-byok/total?style=flat-square)](https://github.com/zkldwxz/cursor-byok/releases)
-[![License](https://img.shields.io/github/license/zkldwxz/cursor-byok?style=flat-square)](./LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/zkldwxz/cursor-byok/releases/latest)
+[![Release](https://img.shields.io/github/v/release/gagmeng/cursor-byok?style=flat-square)](https://github.com/gagmeng/cursor-byok/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/gagmeng/cursor-byok/total?style=flat-square)](https://github.com/gagmeng/cursor-byok/releases)
+[![License](https://img.shields.io/github/license/gagmeng/cursor-byok?style=flat-square)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/gagmeng/cursor-byok/releases/latest)
 
 </div>
 
@@ -23,7 +23,7 @@ A local backend for Cursor: bring your own model APIs, keep Agent tools, Skills,
 
 API keys and settings stay on disk. Model traffic still goes to the provider you chose. This project is independent and is not affiliated with Cursor.
 
-This repository, [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok), is where the app is maintained and released. See [Origin](#origin) for the archived upstream it continues.
+This repository, [gagmeng/cursor-byok](https://github.com/gagmeng/cursor-byok), is where the app is maintained and released. See [Origin](#origin) for the archived upstream it continues.
 
 ## Features
 
@@ -39,7 +39,7 @@ This repository, [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok), 
 
 ## Quick start
 
-1. Download the latest build for your OS from [GitHub Releases](https://github.com/zkldwxz/cursor-byok/releases/latest).
+1. Download the latest build for your OS from [GitHub Releases](https://github.com/gagmeng/cursor-byok/releases/latest).
 2. Open cursor-byok → **Connection diagnostics** and follow setup to initialize and trust the local CA. Fresh configurations open this page automatically; setup can be deferred.
 3. Open **Model Settings**, add a model (server URL, API key, model ID), save, and run **Test**.
 4. Keep cursor-byok running.
@@ -166,7 +166,7 @@ See [AGENTS.md](./AGENTS.md) and [`.agents/skills/`](.agents/skills/) before cha
 
 cursor-byok was created by [leookun](https://github.com/leookun) in [leookun/cursor-byok](https://github.com/leookun/cursor-byok). That repository was **archived in October 2026**.
 
-**This repository is the continuation:** bug fixes, ZCode, store/pruning work, updater signing, and GitHub Releases are published from [zkldwxz/cursor-byok](https://github.com/zkldwxz/cursor-byok). Installers and `latest.json` / `update.json` point here.
+**This repository is the continuation:** bug fixes, ZCode, store/pruning work, updater signing, and GitHub Releases are published from [gagmeng/cursor-byok](https://github.com/gagmeng/cursor-byok). Installers and `latest.json` / `update.json` point here.
 
 The original MIT-licensed code remains the foundation. Credit belongs with the original author and everyone who contributed upstream; this repo adds maintenance on top of that tree.
 

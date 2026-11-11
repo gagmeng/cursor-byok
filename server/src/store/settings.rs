@@ -254,6 +254,16 @@ fn read_proxy_settings(value: &str) -> ProxySettingsSecret {
 }
 
 impl Store {
+    pub async fn ensure_plugin_unreferenced(&self, plugin_id: &str) -> Result<()> {
+        let prefix = format!("plugin:{plugin_id}/");
+        let commit = self.commit_settings().await?;
+        let review = self.auto_review_model().await?;
+        if commit.model_id.starts_with(&prefix) || review.is_some_and(|id| id.starts_with(&prefix))
+        {
+            return Err(crate::Error::Config(format!("plugin {plugin_id} is still referenced by Commit or auto-review settings; select another model first")));
+        }
+        Ok(())
+    }
     pub async fn external_api_settings(&self) -> Result<ExternalApiSettings> {
         let value = sqlx::query_scalar::<_, String>(
             "SELECT value_json FROM service_settings WHERE setting_key = ?",
