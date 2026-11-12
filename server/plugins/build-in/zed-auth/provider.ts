@@ -612,11 +612,14 @@ async function streamZedAnthropic(
           });
         }
         if (inputTokens !== null || outputTokens !== null) {
-          const totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+          const contextInputTokens = (inputTokens ?? 0) + (cacheReadTokens ?? 0) +
+            (cacheWriteTokens ?? 0);
+          const totalTokens = contextInputTokens + (outputTokens ?? 0);
           output.emit({
             type: "usage",
             usage: {
               inputTokens,
+              contextInputTokens: contextInputTokens > 0 ? contextInputTokens : inputTokens,
               outputTokens,
               totalTokens: totalTokens > 0 ? totalTokens : null,
               cacheReadTokens,
@@ -657,11 +660,14 @@ async function streamZedAnthropic(
       });
     }
     if (inputTokens !== null || outputTokens !== null) {
-      const totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+      const contextInputTokens = (inputTokens ?? 0) + (cacheReadTokens ?? 0) +
+        (cacheWriteTokens ?? 0);
+      const totalTokens = contextInputTokens + (outputTokens ?? 0);
       output.emit({
         type: "usage",
         usage: {
           inputTokens,
+          contextInputTokens: contextInputTokens > 0 ? contextInputTokens : inputTokens,
           outputTokens,
           totalTokens: totalTokens > 0 ? totalTokens : null,
           cacheReadTokens,
@@ -906,6 +912,7 @@ async function streamZedGoogle(
           type: "usage",
           usage: {
             inputTokens,
+            contextInputTokens: inputTokens,
             outputTokens,
             totalTokens: totalTokens ?? ((inputTokens ?? 0) + (outputTokens ?? 0)),
             cacheReadTokens,
@@ -936,6 +943,7 @@ async function streamZedGoogle(
         type: "usage",
         usage: {
           inputTokens,
+          contextInputTokens: inputTokens,
           outputTokens,
           totalTokens: totalTokens ?? ((inputTokens ?? 0) + (outputTokens ?? 0)),
           cacheReadTokens,

@@ -150,7 +150,7 @@ pub fn model_event(value: &serde_json::Value) -> Result<ModelEvent> {
             let input_tokens = tokens("inputTokens");
             ModelEvent::Usage(Usage {
                 input_tokens,
-                context_input_tokens: input_tokens,
+                context_input_tokens: tokens("contextInputTokens").or(input_tokens),
                 output_tokens: tokens("outputTokens"),
                 total_tokens: tokens("totalTokens"),
                 cache_read_tokens: tokens("cacheReadTokens"),
@@ -301,5 +301,28 @@ mod tests {
             })
         );
         assert!(model_event(&serde_json::json!({"type":"mystery"})).is_err());
+    }
+
+    /// 上下文占用必须包含缓存命中和写入,否则带 prompt cache 的插件会把
+    /// 上下文体积报小,压缩与成本统计同时失真。
+    #[test]
+    fn plugin_reported_context_tokens_override_the_input_token_fallback() {
+        let usage = model_event(&serde_json::json!({
+            "type":"usage",
+            "usage":{"inputTokens":2,"contextInputTokens":14,"outputTokens":2,"cacheReadTokens":12}
+        }))
+        .unwrap();
+        assert_eq!(
+            usage,
+            ModelEvent::Usage(Usage {
+                input_tokens: Some(2),
+                context_input_tokens: Some(14),
+                output_tokens: Some(2),
+                total_tokens: None,
+                cache_read_tokens: Some(12),
+                cache_write_tokens: None,
+                reasoning_tokens: None,
+            })
+        );
     }
 }
