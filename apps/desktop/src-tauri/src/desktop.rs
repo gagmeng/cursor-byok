@@ -33,6 +33,18 @@ use crate::tray;
 pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 const AUTOSTART_ARG: &str = "--autostart";
 
+/// 从状态行取出状态码;只有 2xx 说明我们的后端在这个端口上答复。
+fn is_success_status(response: &[u8]) -> bool {
+    let Some(space) = response.iter().position(|byte| *byte == b' ') else {
+        return false;
+    };
+    let Some(code) = response.get(space + 1..space + 4) else {
+        return false;
+    };
+    // 状态行是 "HTTP/1.1 204 No Content\r\n";只接受三位数字且首位为 2。
+    code[0] == b'2' && code[1..].iter().all(u8::is_ascii_digit)
+}
+
 async fn wait_for_backend(address: std::net::SocketAddr, timeout: Duration) -> std::io::Result<()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     tokio::time::timeout(timeout,async {
@@ -42,7 +54,7 @@ async fn wait_for_backend(address: std::net::SocketAddr, timeout: Duration) -> s
                 connection.write_all(b"GET /__byok-api__/healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await?;
                 let mut bytes=Vec::with_capacity(512);
                 connection.take(8192).read_to_end(&mut bytes).await?;
-                Ok::<_,std::io::Error>(bytes.starts_with(b"HTTP/1.1 200 ") || bytes.starts_with(b"HTTP/1.0 200 "))
+                Ok::<_,std::io::Error>(is_success_status(&bytes))
             }).await;
             if matches!(probe,Ok(Ok(true))) {return Ok(());}
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -60,6 +72,34 @@ struct DesktopRuntime {
 #[cfg(test)]
 mod readiness_tests {
     use super::*;
+
+    /// 真实的 health handler 返回 204 而不是 200(它没有响应体)。就绪探测必须
+    /// 接受任意 2xx;只在 200 上放行会让桌面端在启动两分钟后判定失败并退出。
+    async fn serve_health(status: StatusCode) -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route(
+                    "/__byok-api__/healthz",
+                    axum::routing::get(move || async move { status }),
+                ),
+            )
+            .await
+            .unwrap()
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn a_no_content_health_reply_counts_as_ready() {
+        let address = serve_health(StatusCode::NO_CONTENT).await;
+        wait_for_backend(address, Duration::from_secs(2))
+            .await
+            .expect("204 from the health handler means the backend is serving");
+    }
+
     #[tokio::test]
     async fn a_bound_port_is_not_ready_until_the_health_handler_replies() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -67,12 +107,13 @@ mod readiness_tests {
         assert!(wait_for_backend(address, Duration::from_millis(30))
             .await
             .is_err());
+        let status = StatusCode::NO_CONTENT;
         let server = tokio::spawn(async move {
             axum::serve(
                 listener,
                 Router::new().route(
                     "/__byok-api__/healthz",
-                    axum::routing::get(|| async { StatusCode::OK }),
+                    axum::routing::get(move || async move { status }),
                 ),
             )
             .await
@@ -82,6 +123,15 @@ mod readiness_tests {
             .await
             .unwrap();
         server.abort();
+    }
+
+    /// 一个非 2xx 的答复只说明端口上有人监听,不说明它就是我们的后端。
+    #[tokio::test]
+    async fn an_error_status_is_not_ready() {
+        let address = serve_health(StatusCode::SERVICE_UNAVAILABLE).await;
+        assert!(wait_for_backend(address, Duration::from_millis(300))
+            .await
+            .is_err());
     }
 }
 
