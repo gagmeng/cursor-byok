@@ -383,14 +383,12 @@ impl ConversationRuntime {
                                     // abort active execs and publish a recoverable checkpoint before the
                                     // old Run ends. It must not be reduced to handle.cancel() here.
                                     //
-                                    // The remaining unimplemented Action variants are
                                     // ShellCommandAction, StartPlanAction,
                                     // AsyncAskQuestionCompletionAction, BackgroundShellAction,
                                     // BackgroundSubagentAction,
-                                    // SubscriptionNotificationAction and GoalContinuationAction.
-                                    // Variants whose wire behavior is not captured yet need evidence
-                                    // before assigning semantics. Every unsupported runtime Action must
-                                    // return an explicit Protocol Error rather than falling through silently.
+                                    // SubscriptionNotificationAction, GoalContinuationAction and
+                                    // ResumeAction still have no runtime semantics. They return a
+                                    // protocol error instead of being ignored.
                                     Some(
                                         pb::agent_client_message::Message::ConversationAction(
                                             conversation_action,
@@ -454,6 +452,13 @@ impl ConversationRuntime {
                                             ),
                                         ) => {
                                             let Some(generation) = current.as_ref() else {
+                                                let _ = super::output::finish_failed(
+                                                    &handle,
+                                                    &crate::Error::Protocol(
+                                                        "InjectContextAction arrived without an active generation"
+                                                            .into(),
+                                                    ),
+                                                );
                                                 continue;
                                             };
                                             if generation
@@ -483,11 +488,32 @@ impl ConversationRuntime {
                                             }
                                         }
                                         Some(action) => {
-                                            tracing::warn!(
-                                                request_id = handle.request_id(),
-                                                action = runtime_action_name(&action),
-                                                "ignoring unsupported runtime ConversationAction"
+                                            let message = format!(
+                                                "unsupported runtime ConversationAction: {}",
+                                                runtime_action_name(&action)
                                             );
+                                            let Some(generation) = current.as_ref() else {
+                                                let _ = super::output::finish_failed(
+                                                    &handle,
+                                                    &crate::Error::Protocol(message),
+                                                );
+                                                continue;
+                                            };
+                                            if let Some(run) = generation.run.lock().clone() {
+                                                run.cancel();
+                                            }
+                                            if generation
+                                                .runtime_actions
+                                                .send(compile::RuntimeAction::Unsupported(
+                                                    message.clone(),
+                                                ))
+                                                .is_err()
+                                            {
+                                                let _ = super::output::finish_failed(
+                                                    &handle,
+                                                    &crate::Error::Protocol(message),
+                                                );
+                                            }
                                         }
                                         None => {
                                             if let Some(generation) = current.as_ref() {

@@ -169,6 +169,32 @@ mod llm_call {
         pub error_kind: Option<String>,
         pub error_message: Option<String>,
         pub detailed: bool,
+        pub phase: String,
+        pub activity: Option<String>,
+    }
+
+    pub fn call_phase(
+        status: &str,
+        response_headers_at_ms: Option<i64>,
+        first_event_at_ms: Option<i64>,
+        first_text_at_ms: Option<i64>,
+    ) -> String {
+        let phase = if status == "running" {
+            if first_event_at_ms.is_some() || first_text_at_ms.is_some() {
+                "generating"
+            } else if response_headers_at_ms.is_some() {
+                "waiting"
+            } else {
+                "connecting"
+            }
+        } else if status == "completed" {
+            "done"
+        } else if status == "cancelled" {
+            "cancelled"
+        } else {
+            "failed"
+        };
+        phase.to_owned()
     }
 
     #[derive(Clone, Debug, Serialize)]

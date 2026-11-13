@@ -1,36 +1,46 @@
 请从下方附件下载对应平台的安装包；Windows 同时提供便携版 ZIP。
 
-## 修复：桌面端启动约两分钟后自行退出
+## 调用记录可以检索，详情留在应用里
 
-- **原因** — 1.1.5 新增的就绪探测只接受 `HTTP/1.1 200`，而健康端点实际返回 `204 No Content`（它没有响应体）。探测在 120 秒窗口内全部失败，随后进程以状态 1 主动退出。
-- **表现** — 应用启动、界面正常打开，但约两分钟后窗口消失、转发服务随之中断。
-- **修复** — 探测改为接受任意 `2xx`，仍拒绝非 `2xx` 答复（那只能说明端口上有人监听，不说明是本应用的后端）。
-- **连带修复** — 更新替换流程复用同一条就绪链路，此前会把替换后的新进程误报为「启动失败」。
+- 调用页可以按状态、模型、会话筛选，并继续加载更早的记录。
+- 「查看详情」在应用窗口内打开。进行中的调用会持续刷新，并显示当前阶段：连接、等待首个事件、生成、重试或切换备用模型。
+- 列表和详情的列名、状态跟随界面语言。
 
-## 改进：Zed 提供商上下文用量统计
+## 配置备份可以查看和恢复
 
-- 带 prompt cache 的响应中，`input_tokens` 只代表缓存未命中的部分。插件此前只上报这一份，宿主记录下的上下文体积远小于模型实际读取量，压缩阈值与成本统计同时失真。
-- 现在插件上报 `contextInputTokens` = 输入 + 缓存命中 + 缓存写入，宿主优先采用它，缺省时回退到 `inputTokens`。
-- Anthropic、OpenAI Responses 与 Google 三条协议路径均已覆盖。
-- Zed 插件图标更新为官方版本。
+- 系统设置列出最近 7 份自动备份，以及最近一次备份失败的原因。
+- 可以查看与当前配置的差异，然后选择「跳过已有」或「覆盖已有」。恢复前会先写下当前配置。
+- 备份包含插件模型目录。目录损坏时这次备份失败，不会换掉已经成功的备份。
+
+## 请求超时可以配置
+
+- 系统设置可以修改单次请求的总超时，以及等待下一个事件的流空闲时间。保存后对下一次模型调用生效。
+- 上游返回 429 时按 `Retry-After` 等待，等待时间不超过剩余的总超时。
+
+## 可靠性
+
+- 运行中收到尚未实现的会话动作时，返回明确的协议错误，不再静默丢掉。
+- 接管状态会检查 `http.noProxy`。这个键被加回去之后，不再显示为已接管。
+- 关闭代理时，如果 5 秒内没有退出，会中止仍在监听的进程。
+- 进程异常退出后，下次启动会解除指向已取消运行的会话所有权，检查点仍然保留。
+- 远程代码索引只接受 HTTPS。同一仓库并发刷新时，等锁时间覆盖一次完整刷新。
 
 ## 升级说明
 
-- 本轮无数据库迁移，schema 保持在 15。
-- Zed 插件版本升至 `0.1.1`，首次启动时会覆盖磁盘上的旧插件目录，新的用量统计随之生效。
+- 数据库增加第 16 号迁移：调用记录新增 `activity` 列，用来保存重试和备用切换说明。已有数据库启动时自动升级。
+- 设备迁移文件仍是版本 3。旧文件可以继续导入；新导出的文件会带上插件模型目录。
 
 ## 验证
 
-- 修复前：旧二进制在 17:30:27 启动，17:32:29 报「未就绪」并退出，正好 122 秒。
-- 修复后：新二进制连续运行 9 分 24 秒（越过两个 120 秒窗口），健康端点稳定返回 `204`，日志零新增错误。
-- 本地回归通过：格式检查、Clippy、全量 Rust 测试、前端类型检查与构建。
-- 就绪探测新增三个测试，均使用真实健康端点的 `204`，另有一个 `503` 的反向用例。
+- 格式检查、Clippy、全量 Rust 测试、前端类型检查与构建已通过。
+- 未实现的会话动作、崩溃后的会话所有权、备份失败不轮换、调用分页，均有回归测试。
 
 ---
 
 ## English summary
 
-- **Startup fix:** the 1.1.5 readiness probe accepted only `HTTP/1.1 200`, but the health endpoint answers `204 No Content`. Every startup failed the probe for the full 120 s window and then exited with status 1, so the app closed itself about two minutes after launch. The probe now accepts any `2xx` and still rejects non-`2xx` replies. The update handshake shares this path, so a replaced process would also have been reported as failed to start.
-- **Zed usage accounting:** prompt-cached responses report `input_tokens` as only the uncached remainder. The plugin now sends `contextInputTokens` (input + cache read + cache write) across the Anthropic, OpenAI Responses, and Google paths, and the host prefers it over the `inputTokens` fallback.
-- **Upgrade:** no schema change (stays at 15); the Zed plugin moves to `0.1.1` so existing installs pick up the new provider source.
-- **Validation:** the old binary exited 122 s after launch; the fixed binary ran 9m 24s across two 120 s windows with a steady `204` health reply and no new log errors. Formatting, Clippy, the full Rust suite, and the frontend type check and build passed.
+- **Calls:** filter by status, model, and conversation, and load older records. Call details stay in the app, keep refreshing while a call is running, and show whether it is connecting, waiting for the first event, generating, retrying, or failing over.
+- **Backups:** the last seven automatic backups are listed with the latest failure. A preview compares them with the current configuration; restore can skip or overwrite existing identities, and writes a snapshot of the current configuration first. Plugin model catalogs are included. A corrupt catalog fails that backup instead of replacing a good one.
+- **Timeouts:** the per-request budget and the stream idle wait are configurable and apply on the next model call. A 429 waits for `Retry-After` only while time remains in the budget.
+- **Reliability:** unsupported in-flight conversation actions return a protocol error. Takeover status stays off when `http.noProxy` is put back. Stopping the proxy aborts a listener that does not exit within 5 seconds. Startup clears conversation ownership that still points at a cancelled run. Remote code indexing accepts HTTPS only, and the cache lock wait covers one full refresh.
+- **Upgrade:** migration 16 adds `llm_calls.activity`. Device migration files stay at version 3; older files still import, and new exports include plugin model catalogs.

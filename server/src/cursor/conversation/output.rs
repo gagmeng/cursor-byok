@@ -244,6 +244,9 @@ impl ConversationOutput {
                         )
                         .await?;
                     }
+                    RuntimeAction::Unsupported(message) => {
+                        return Err(Error::Protocol(message));
+                    }
                 },
                 Input::RuntimeAction(None) => {
                     return Err(Error::Protocol("runtime action channel closed".into()));

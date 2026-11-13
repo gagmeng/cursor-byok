@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, type CursorHarnessStatus, type LlmCall, type Model, type ModelInput, type Overview, type PluginDescriptor, type PluginRuntimeStatus, type PortSettings, type TokenPricingSettings } from "../api";
+import { api, type CallCursor, type CursorHarnessStatus, type LlmCall, type Model, type ModelInput, type Overview, type PluginDescriptor, type PluginRuntimeStatus, type PortSettings, type TokenPricingSettings } from "../api";
 import { applyTheme, isThemeId, type ThemeId } from "../theme/theme";
 
 export const DEFAULT_TOKEN_PRICING: TokenPricingSettings = {
@@ -12,6 +12,8 @@ export const DEFAULT_TOKEN_PRICING: TokenPricingSettings = {
 export type AppSnapshot = {
   models: Model[];
   calls: LlmCall[];
+  callsNext: CallCursor | null;
+  callFilter: { status: string; conversationId: string; model: string };
   overview: Overview;
   detailed: boolean;
   ports: PortSettings;
@@ -33,6 +35,8 @@ const savedTheme = (): ThemeId => {
 let snapshot: AppSnapshot = {
   models: [],
   calls: [],
+  callsNext: null,
+  callFilter: { status: "", conversationId: "", model: "" },
   overview: {
     metrics: {
       llm_calls: 0,
@@ -100,7 +104,7 @@ export const appStore = {
     };
     await Promise.all([
       load(api.models(), (models) => ({ models })),
-      load(api.calls(), (calls) => callsVersion === callsGeneration ? ({ calls }) : ({})),
+      load(api.calls({ ...snapshot.callFilter, limit: 50 }), (page) => callsVersion === callsGeneration ? ({ calls: page.calls, callsNext: page.next }) : ({})),
       load(api.overview(), (overview) => ({ overview })),
       load(api.observability(), ({ detailed }) => ({ detailed })),
       load(api.ports(), (ports) => ({ ports })),
@@ -230,18 +234,29 @@ export const appStore = {
     } finally { update({ cursorBusy: false }); }
   },
 
-  async refreshCalls() {
+  async refreshCalls(append = false) {
     const generation = ++callsGeneration;
+    const filter = snapshot.callFilter;
     try {
-      const calls = await api.calls();
-      if (generation === callsGeneration) update({ calls });
+      const page = await api.calls({
+        limit: 50,
+        before: append ? snapshot.callsNext : null,
+        status: filter.status,
+        conversationId: filter.conversationId,
+        model: filter.model,
+      });
+      if (generation !== callsGeneration) return;
+      update({
+        calls: append ? [...snapshot.calls, ...page.calls] : page.calls,
+        callsNext: page.next,
+      });
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
     }
   },
 
-  async openCallDetails(callId: string) {
-    await perform(() => api.openCallDetails(callId));
+  async setCallFilter(filter: AppSnapshot["callFilter"]) {
+    update({ callFilter: filter });
   },
   async updateDetailed(detailed: boolean) {
     await perform(async () => update(await api.setObservability(detailed)));

@@ -158,6 +158,25 @@ impl PluginRegistry {
         Ok(exports)
     }
 
+    pub async fn persisted_model_exports(
+        &self,
+    ) -> Result<Vec<(String, String, serde_json::Value)>> {
+        self.inner.state.model_snapshots().await
+    }
+
+    pub async fn restore_models(
+        &self,
+        plugin_id: &str,
+        provider_id: &str,
+        models: Vec<serde_json::Value>,
+        overwrite: bool,
+    ) -> Result<(usize, usize)> {
+        self.inner
+            .state
+            .restore_models(plugin_id, provider_id, models, overwrite)
+            .await
+    }
+
     pub fn managed(store: Store, runtime: PluginRuntime, app_version: String) -> Result<Self> {
         let data = PluginDataStore::managed()?;
         Self::with_data(store, runtime, app_version, data)

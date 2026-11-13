@@ -1,5 +1,6 @@
 //! Exposes the local control API.
 mod access;
+mod backups;
 mod calls;
 mod capabilities;
 mod diagnostics;
@@ -15,6 +16,8 @@ mod plugins;
 mod service;
 mod settings;
 pub(crate) use access::ManagementSession;
+
+pub(crate) use backups::run_backup_once;
 
 pub(crate) fn protect_management_router(router: Router, session: ManagementSession) -> Router {
     access::protect(router, session)
@@ -32,7 +35,7 @@ use url::Url;
 
 pub use diagnostics::Capability;
 pub use service::{
-    CallDetail, CallSummary, ControlService, DiscoveredModels, LegacyModelImportPreview,
+    CallDetail, CallList, CallSummary, ControlService, DiscoveredModels, LegacyModelImportPreview,
     LegacyModelImportResult, MagpieImportModel, MagpieImportPreview, ModelConnectivityResult,
     ModelDiscoveryInput, ObservabilitySettings,
 };
@@ -203,6 +206,15 @@ pub fn api_router(service: ControlService) -> Router {
         )
         .route("/__byok-api__/api/migration/export", get(migration::export))
         .route("/__byok-api__/api/migration/import", post(migration::import))
+        .route("/__byok-api__/api/backups", get(backups::list))
+        .route(
+            "/__byok-api__/api/backups/{name}/preview",
+            post(backups::preview),
+        )
+        .route(
+            "/__byok-api__/api/backups/{name}/restore",
+            post(backups::restore),
+        )
         .route(
             "/__byok-api__/api/settings/observability",
             get(settings::get).put(settings::update),
@@ -210,6 +222,10 @@ pub fn api_router(service: ControlService) -> Router {
         .route(
             "/__byok-api__/api/settings/ports",
             get(settings::get_ports).put(settings::update_ports),
+        )
+        .route(
+            "/__byok-api__/api/settings/request-budget",
+            get(settings::get_request_budget).put(settings::update_request_budget),
         )
         .route(
             "/__byok-api__/api/settings/external-api",

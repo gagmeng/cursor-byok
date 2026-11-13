@@ -1,5 +1,11 @@
 //! Restricted HTTPS Git acquisition for explicitly requested remote repositories.
 
+const GIT_STEP_TIMEOUT: Duration = Duration::from_secs(30);
+/// fetch, reset, rev-parse, and worktree add can each hold the cache lock.
+const MAX_GIT_STEPS_UNDER_LOCK: u32 = 4;
+const LOCK_WAIT: Duration =
+    Duration::from_secs(GIT_STEP_TIMEOUT.as_secs() * MAX_GIT_STEPS_UNDER_LOCK as u64);
+
 use std::{
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -28,7 +34,7 @@ impl RemoteRepository {
 
     fn resolve(url: &str, cache_root: &Path, refresh: bool) -> Result<Self> {
         let parsed = Url::parse(url).map_err(|_| Error::UnsupportedUrl(url.to_owned()))?;
-        if !matches!(parsed.scheme(), "https" | "http") || parsed.host_str().is_none() {
+        if parsed.scheme() != "https" || parsed.host_str().is_none() {
             return Err(Error::UnsupportedUrl(url.to_owned()));
         }
         Self::acquire_validated(url, cache_root, refresh)
@@ -46,7 +52,7 @@ impl RemoteRepository {
             .write(true)
             .open(&lock_path)
             .map_err(|error| Error::io(&lock_path, error))?;
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + LOCK_WAIT;
         loop {
             match lock.try_lock() {
                 Ok(()) => break,
@@ -120,7 +126,7 @@ impl RemoteRepository {
 }
 
 fn run_git(command: &mut Command) -> Result<String> {
-    run_bounded(command, Duration::from_secs(30))
+    run_bounded(command, GIT_STEP_TIMEOUT)
 }
 
 fn run_bounded(command: &mut Command, timeout: Duration) -> Result<String> {
@@ -284,7 +290,12 @@ mod tests {
     }
 
     #[test]
-    fn remote_sources_reject_non_http_urls_before_git_runs() {
+    fn lock_wait_covers_every_git_step_that_can_hold_it() {
+        assert!(LOCK_WAIT >= GIT_STEP_TIMEOUT * MAX_GIT_STEPS_UNDER_LOCK);
+    }
+
+    #[test]
+    fn remote_sources_reject_non_https_urls_before_git_runs() {
         let directory = tempfile::tempdir().unwrap();
         assert!(matches!(
             RemoteRepository::acquire("file:///tmp/repository", directory.path()),
@@ -292,6 +303,10 @@ mod tests {
         ));
         assert!(matches!(
             RemoteRepository::acquire("git@github.com:owner/repo.git", directory.path()),
+            Err(Error::UnsupportedUrl(_))
+        ));
+        assert!(matches!(
+            RemoteRepository::acquire("http://example.com/repo.git", directory.path()),
             Err(Error::UnsupportedUrl(_))
         ));
     }

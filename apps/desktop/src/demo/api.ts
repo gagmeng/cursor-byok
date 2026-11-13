@@ -79,6 +79,8 @@ const calls: LlmCall[] = Array.from({ length: 24 }, (_, index) => {
     error_kind: failed ? "provider_rate_limit" : null,
     error_message: failed ? "Mock provider rate limit" : null,
     detailed: true,
+    phase: failed ? "failed" : "done",
+    activity: null,
   };
 });
 
@@ -194,7 +196,37 @@ export function installDemoApi() {
       return empty();
     }
     if (path === "/overview") return json(createOverview(url.searchParams));
-    if (path === "/llm-calls") return json(calls);
+    if (path === "/llm-calls") {
+      const status = url.searchParams.get("status");
+      const model = url.searchParams.get("model");
+      const conversation = url.searchParams.get("conversation_id");
+      const before = Number(url.searchParams.get("before_created_at_ms") ?? "");
+      const beforeId = url.searchParams.get("before_call_id");
+      let rows = calls.filter((call) => (!status || call.status === status)
+        && (!model || call.model_id === model || call.display_name === model || call.model_hash === model)
+        && (!conversation || call.conversation_id === conversation));
+      if (Number.isFinite(before) && beforeId) {
+        rows = rows.filter((call) => call.created_at_ms < before || (call.created_at_ms === before && call.call_id < beforeId));
+      }
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      const page = rows.slice(0, Number.isFinite(limit) ? limit : 50);
+      const last = page.at(-1);
+      return json({ calls: page, next: last && rows.length > page.length ? { created_at_ms: last.created_at_ms, call_id: last.call_id } : null });
+    }
+    if (path === "/settings/request-budget" && method === "GET") return json({ request_timeout_seconds: 3600, stream_idle_timeout_seconds: 1800 });
+    if (path === "/settings/request-budget") return json(body);
+    if (path === "/backups" && method === "GET") return json({
+      last_error: null,
+      last_error_at_ms: null,
+      backups: [0, 1, 2, 3, 4, 5, 6].map((index) => ({
+        name: `cursor-byok-backup-demo-${index}.json`,
+        bytes: 1200,
+        exported_at_ms: FIXED_NOW - index * 3 * 60 * 60 * 1000,
+        readable: true,
+      })),
+    });
+    if (path.startsWith("/backups/") && path.endsWith("/preview")) return json({ name: "demo.json", exported_at_ms: FIXED_NOW, models_added: [], models_changed: [], models_unchanged: 0, models_only_local: [], plugin_models_added: [], plugin_models_changed: [], plugin_models_only_local: [], accounts_added: 0, accounts_changed: 0 });
+    if (path.startsWith("/backups/") && path.endsWith("/restore")) return json({ snapshot: "cursor-byok-backup-demo.json", result: { models_added: 0, models_updated: 0, models_total: 0, resources_added: 0, resources_updated: 0, plugin_models_added: 0, plugin_models_updated: 0, warnings: [] } });
     if (path.startsWith("/llm-calls/")) return json(createCallDetail(path.slice("/llm-calls/".length)));
     if (path === "/harness/cursor/status") return json(harnessStatus);
     if (path === "/harness/cursor/ca/initialize") return json(harnessStatus);

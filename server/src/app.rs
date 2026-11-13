@@ -58,7 +58,7 @@ async fn run_config_backups(
             _ = shutdown.cancelled() => break,
             _ = tokio::time::sleep(delay) => {}
         }
-        delay = match write_config_backup(&control, &backup_root).await {
+        delay = match crate::control::run_backup_once(&control, &backup_root).await {
             Ok(path) => {
                 tracing::info!(path = %path.display(), "daily config backup written");
                 Duration::from_secs(24 * 60 * 60)
@@ -69,55 +69,6 @@ async fn run_config_backups(
             }
         };
     }
-}
-
-async fn write_config_backup(
-    control: &crate::control::ControlService,
-    backup_root: &std::path::Path,
-) -> crate::Result<std::path::PathBuf> {
-    tokio::fs::create_dir_all(backup_root).await?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(backup_root, std::fs::Permissions::from_mode(0o700)).await?;
-    }
-    let bundle = control.migration_export().await?;
-    let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f");
-    let path = backup_root.join(format!(
-        "cursor-byok-backup-{stamp}-{}.json",
-        uuid::Uuid::new_v4()
-    ));
-    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-    let data = serde_json::to_vec_pretty(&bundle)?;
-    tokio::fs::write(&temporary, data).await?;
-    tokio::fs::OpenOptions::new()
-        .write(true)
-        .open(&temporary)
-        .await?
-        .sync_all()
-        .await?;
-    tokio::fs::rename(&temporary, &path).await?;
-    let mut names = Vec::new();
-    let mut entries = tokio::fs::read_dir(backup_root).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        if entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with("cursor-byok-backup-")
-            && entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "json")
-        {
-            names.push(entry.file_name());
-        }
-    }
-    names.sort();
-    while names.len() > 7 {
-        let oldest = names.remove(0);
-        tokio::fs::remove_file(backup_root.join(oldest)).await?;
-    }
-    Ok(path)
 }
 
 /// Long-running sessions keep growing the database between restarts; rerun
@@ -414,26 +365,32 @@ mod tests {
             serde_json::from_slice(&tokio::fs::read(path).await.unwrap()).unwrap();
         assert_eq!(file.version, 3);
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 7);
-        let before = std::fs::read_dir(&root)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect::<std::collections::BTreeSet<_>>();
+        let backup_names = |root: &std::path::Path| {
+            std::fs::read_dir(root)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .filter(|name| name.to_string_lossy().starts_with("cursor-byok-backup-"))
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let before = backup_names(&root);
         let broken = plugin_data.join("dev.example");
         std::fs::create_dir_all(&broken).unwrap();
         std::fs::write(broken.join("resources-account.json"), b"{corrupt").unwrap();
         for _ in 0..8 {
             assert!(
-                write_config_backup(&service, &root).await.is_err(),
+                control::run_backup_once(&service, &root).await.is_err(),
                 "corrupt persisted accounts must fail the entire backup"
             );
         }
-        let after = std::fs::read_dir(&root)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
-            before, after,
+            before,
+            backup_names(&root),
             "failed backups must never rotate the last complete snapshots"
         );
+        let status: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("backup-status.json")).expect("backup failure is recorded"),
+        )
+        .unwrap();
+        assert!(status["last_error"].is_string());
     }
 }

@@ -77,11 +77,20 @@ impl ProxyRuntime {
     }
 
     pub async fn stop(&mut self) {
+        self.stop_within(std::time::Duration::from_secs(5)).await;
+    }
+
+    async fn stop_within(&mut self, wait: std::time::Duration) {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
-        if let Some(task) = self.task.take() {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), task).await;
+        if let Some(mut task) = self.task.take() {
+            // Dropping the join handle detaches the task, so a stuck proxy
+            // would keep the old port after the runtime forgot it.
+            if tokio::time::timeout(wait, &mut task).await.is_err() {
+                task.abort();
+                let _ = task.await;
+            }
         }
         self.url = None;
         self.port = None;
@@ -302,6 +311,24 @@ mod tests {
             actual.local_addr().unwrap().port(),
             occupied.local_addr().unwrap().port()
         );
+    }
+
+    #[tokio::test]
+    async fn stop_aborts_a_proxy_task_that_ignores_shutdown() {
+        let mut runtime = ProxyRuntime {
+            url: Some("http://127.0.0.1:9".into()),
+            port: Some(9),
+            task: Some(tokio::spawn(std::future::pending::<()>())),
+            ..ProxyRuntime::default()
+        };
+        let started = std::time::Instant::now();
+        runtime
+            .stop_within(std::time::Duration::from_millis(30))
+            .await;
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!runtime.running());
+        assert!(runtime.url().is_none());
+        assert!(runtime.port().is_none());
     }
 
     #[test]

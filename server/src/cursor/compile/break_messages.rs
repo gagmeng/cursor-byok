@@ -20,6 +20,7 @@ use super::{context, images};
 pub(crate) enum RuntimeAction {
     Inject(pb::InjectContextAction),
     UserMessage(pb::UserMessageAction),
+    Unsupported(String),
 }
 
 pub(crate) async fn compile_user_message_action(

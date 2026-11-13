@@ -27,7 +27,8 @@ impl Store {
         &self,
         models: &[(String, ModelConfigInput)],
         prompts: &[crate::model::ModelSystemPromptConfig],
-    ) -> Result<usize> {
+        overwrite: bool,
+    ) -> Result<(usize, usize)> {
         crate::model::ModelSystemPromptConfig::validate_all(prompts)?;
         let mut seen = HashSet::new();
         let normalized = models
@@ -44,9 +45,25 @@ impl Store {
         let mut session = self.write_session().await?;
         let mut tx = session.begin().await?;
         let mut added = 0;
+        let mut updated = 0;
         for (id, input) in &normalized {
-            added +=
-                usize::from(insert_model_with_conflict(&mut tx, id, input, now_ms(), true).await?);
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM model_configs WHERE model_hash = ?)",
+            )
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+            let conflict = if overwrite {
+                ModelConflict::Replace
+            } else {
+                ModelConflict::Skip
+            };
+            let wrote = insert_model_with_conflict(&mut tx, id, input, now_ms(), conflict).await?;
+            if wrote && !exists {
+                added += 1;
+            } else if wrote && exists {
+                updated += 1;
+            }
         }
         validate_fallbacks(&mut tx).await?;
         for prompt in prompts.iter().filter(|prompt| {
@@ -66,11 +83,15 @@ impl Store {
                     prompt.model_id
                 )));
             }
-            super::model_system_prompts::insert_missing(&mut tx, prompt).await?;
+            if overwrite {
+                super::model_system_prompts::upsert_prompt(&mut tx, prompt).await?;
+            } else {
+                super::model_system_prompts::insert_missing(&mut tx, prompt).await?;
+            }
         }
         tx.commit().await?;
         session.committed();
-        Ok(added)
+        Ok((added, updated))
     }
 
     pub async fn models(&self) -> Result<Vec<ModelConfig>> {
@@ -404,8 +425,14 @@ async fn insert_model(
     input: &ModelConfigInput,
     now: i64,
 ) -> Result<()> {
-    insert_model_with_conflict(transaction, hash, input, now, false).await?;
+    insert_model_with_conflict(transaction, hash, input, now, ModelConflict::Reject).await?;
     Ok(())
+}
+
+enum ModelConflict {
+    Reject,
+    Skip,
+    Replace,
 }
 
 async fn insert_model_with_conflict(
@@ -413,7 +440,7 @@ async fn insert_model_with_conflict(
     hash: &str,
     input: &ModelConfigInput,
     now: i64,
-    ignore_existing: bool,
+    conflict: ModelConflict,
 ) -> Result<bool> {
     let mut statement = String::from(
         r#"INSERT INTO model_configs(
@@ -425,8 +452,36 @@ async fn insert_model_with_conflict(
             thinking_budget_tokens, created_at_ms, updated_at_ms
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     );
-    if ignore_existing {
-        statement.push_str(" ON CONFLICT(model_hash) DO NOTHING");
+    match conflict {
+        ModelConflict::Reject => {}
+        ModelConflict::Skip => statement.push_str(" ON CONFLICT(model_hash) DO NOTHING"),
+        ModelConflict::Replace => statement.push_str(
+            " ON CONFLICT(model_hash) DO UPDATE SET
+                sort_order = excluded.sort_order,
+                display_name = excluded.display_name,
+                group_name = excluded.group_name,
+                fallback_model_hash = excluded.fallback_model_hash,
+                model_type = excluded.model_type,
+                base_url = excluded.base_url,
+                use_full_url = excluded.use_full_url,
+                api_key = excluded.api_key,
+                tooltip_data = excluded.tooltip_data,
+                model_id = excluded.model_id,
+                reasoning_effort = excluded.reasoning_effort,
+                openai_endpoint = excluded.openai_endpoint,
+                openai_extra_params_enabled = excluded.openai_extra_params_enabled,
+                openai_extra_params_json = excluded.openai_extra_params_json,
+                custom_headers_enabled = excluded.custom_headers_enabled,
+                custom_headers_json = excluded.custom_headers_json,
+                anthropic_extra_params_enabled = excluded.anthropic_extra_params_enabled,
+                anthropic_extra_params_json = excluded.anthropic_extra_params_json,
+                context_window_tokens = excluded.context_window_tokens,
+                max_completion_tokens = excluded.max_completion_tokens,
+                anthropic_max_tokens = excluded.anthropic_max_tokens,
+                anthropic_thinking_effort = excluded.anthropic_thinking_effort,
+                thinking_budget_tokens = excluded.thinking_budget_tokens,
+                updated_at_ms = excluded.updated_at_ms",
+        ),
     }
     let result = sqlx::query(&statement)
         .bind(hash)

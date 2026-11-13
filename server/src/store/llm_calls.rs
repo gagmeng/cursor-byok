@@ -306,11 +306,58 @@ impl Store {
     }
 
     pub async fn llm_calls(&self, limit: i64) -> Result<Vec<LlmCallSummary>> {
-        let rows = sqlx::query("SELECT * FROM llm_calls ORDER BY created_at_ms DESC LIMIT ?")
-            .bind(limit.clamp(1, 500))
-            .fetch_all(&self.pool)
-            .await?;
+        self.llm_calls_matching(&CallMatch {
+            limit,
+            ..CallMatch::default()
+        })
+        .await
+    }
+
+    pub(crate) async fn llm_calls_matching(
+        &self,
+        query: &CallMatch,
+    ) -> Result<Vec<LlmCallSummary>> {
+        let rows = sqlx::query(
+            "SELECT * FROM llm_calls
+             WHERE (? IS NULL OR status = ?)
+               AND (? IS NULL OR conversation_id = ?)
+               AND (? IS NULL OR model_id = ? OR display_name = ? OR model_hash = ?)
+               AND (? IS NULL OR created_at_ms < ? OR (created_at_ms = ? AND call_id < ?))
+             ORDER BY created_at_ms DESC, call_id DESC
+             LIMIT ?",
+        )
+        .bind(&query.status)
+        .bind(&query.status)
+        .bind(&query.conversation_id)
+        .bind(&query.conversation_id)
+        .bind(&query.model)
+        .bind(&query.model)
+        .bind(&query.model)
+        .bind(&query.model)
+        .bind(query.before_created_at_ms)
+        .bind(query.before_created_at_ms)
+        .bind(query.before_created_at_ms)
+        .bind(&query.before_call_id)
+        .bind(query.limit.clamp(1, 501))
+        .fetch_all(&self.pool)
+        .await?;
         rows.into_iter().map(summary_from_row).collect()
+    }
+
+    pub async fn note_run_activity(&self, run_id: &str, activity: &str) -> Result<()> {
+        let _write = self.writes.lock().await;
+        sqlx::query(
+            "UPDATE llm_calls SET activity = ?
+             WHERE run_id = ? AND provider_call_index = (
+                SELECT MAX(provider_call_index) FROM llm_calls WHERE run_id = ?
+             )",
+        )
+        .bind(activity)
+        .bind(run_id)
+        .bind(run_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn llm_call(&self, call_id: &str) -> Result<Option<LlmCallSummary>> {
@@ -355,6 +402,16 @@ impl Store {
             })
             .collect()
     }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CallMatch {
+    pub limit: i64,
+    pub before_created_at_ms: Option<i64>,
+    pub before_call_id: Option<String>,
+    pub status: Option<String>,
+    pub conversation_id: Option<String>,
+    pub model: Option<String>,
 }
 
 fn as_i64(value: Option<u64>) -> Option<i64> {
@@ -409,6 +466,13 @@ fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> Result<LlmCallSummary> {
         error_kind: row.try_get("error_kind")?,
         error_message: row.try_get("error_message")?,
         detailed: row.try_get("detailed")?,
+        phase: crate::model::call_phase(
+            &row.try_get::<String, _>("status")?,
+            row.try_get("response_headers_at_ms")?,
+            row.try_get("first_event_at_ms")?,
+            row.try_get("first_text_at_ms")?,
+        ),
+        activity: row.try_get("activity")?,
     })
 }
 
@@ -520,5 +584,95 @@ mod tests {
             })
         );
         assert_eq!(store.latest_context_usage("other").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn call_pages_keep_status_and_do_not_repeat_the_cursor() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::connect(&format!(
+            "sqlite://{}",
+            directory.path().join("test.db").display()
+        ))
+        .await
+        .unwrap();
+        for (id, status, created) in [
+            ("c", "failed", 30),
+            ("b", "completed", 20),
+            ("a", "completed", 10),
+        ] {
+            store
+                .start_llm_call(&NewLlmCall {
+                    call_id: id.into(),
+                    run_id: format!("run-{id}"),
+                    conversation_id: "conversation".into(),
+                    provider_call_index: 0,
+                    model_hash: "model".into(),
+                    provider_type: ProviderType::OpenAiChat,
+                    provider_url: "https://example.test".into(),
+                    request_type: ProviderType::OpenAiChat,
+                    request_url: "https://example.test/v1".into(),
+                    model_id: "model".into(),
+                    display_name: "Model".into(),
+                    reasoning_effort: None,
+                    fast: false,
+                    message_count: 1,
+                    tool_count: 0,
+                    detailed: false,
+                })
+                .await
+                .unwrap();
+            sqlx::query("UPDATE llm_calls SET status = ?, created_at_ms = ? WHERE call_id = ?")
+                .bind(status)
+                .bind(created)
+                .bind(id)
+                .execute(store.pool())
+                .await
+                .unwrap();
+        }
+        let failed = store
+            .llm_calls_matching(&CallMatch {
+                limit: 10,
+                status: Some("failed".into()),
+                ..CallMatch::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].call_id, "c");
+        assert_eq!(failed[0].phase, "failed");
+        let first = store
+            .llm_calls_matching(&CallMatch {
+                limit: 2,
+                ..CallMatch::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            first
+                .iter()
+                .map(|call| call.call_id.as_str())
+                .collect::<Vec<_>>(),
+            ["c", "b"]
+        );
+        let next = store
+            .llm_calls_matching(&CallMatch {
+                limit: 2,
+                before_created_at_ms: Some(first[1].created_at_ms),
+                before_call_id: Some(first[1].call_id.clone()),
+                ..CallMatch::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].call_id, "a");
+        let running = store
+            .llm_calls_matching(&CallMatch {
+                limit: 1,
+                status: Some("running".into()),
+                ..CallMatch::default()
+            })
+            .await
+            .unwrap();
+        assert!(running.is_empty());
     }
 }

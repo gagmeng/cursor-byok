@@ -43,6 +43,16 @@ impl PluginDataStore {
     }
 
     pub async fn resource_snapshots(&self) -> Result<Vec<(String, String, serde_json::Value)>> {
+        self.snapshots("resources-").await
+    }
+
+    pub async fn model_snapshots(&self) -> Result<Vec<(String, String, serde_json::Value)>> {
+        self.snapshots("models-").await
+    }
+
+    /// A corrupt catalog fails the whole snapshot. Callers that write backups
+    /// must not rotate away a complete file after a partial read.
+    async fn snapshots(&self, prefix: &str) -> Result<Vec<(String, String, serde_json::Value)>> {
         let mut snapshots = Vec::new();
         let mut directories = tokio::fs::read_dir(&self.root).await?;
         while let Some(directory) = directories.next_entry().await? {
@@ -56,8 +66,8 @@ impl PluginDataStore {
             let mut files = tokio::fs::read_dir(directory.path()).await?;
             while let Some(file) = files.next_entry().await? {
                 let name = file.file_name().to_string_lossy().into_owned();
-                let Some(resource_type) = name
-                    .strip_prefix("resources-")
+                let Some(kind) = name
+                    .strip_prefix(prefix)
                     .and_then(|name| name.strip_suffix(".json"))
                 else {
                     continue;
@@ -65,11 +75,12 @@ impl PluginDataStore {
                 if !file.file_type().await?.is_file() {
                     continue;
                 }
-                snapshots.push((
-                    plugin_id.clone(),
-                    resource_type.to_owned(),
-                    read_json(&file.path()).await?,
-                ));
+                let value = read_json(&file.path()).await.map_err(|error| {
+                    Error::Config(format!(
+                        "plugin data backup cannot read {plugin_id}/{name}: {error}"
+                    ))
+                })?;
+                snapshots.push((plugin_id.clone(), kind.to_owned(), value));
             }
         }
         snapshots.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));

@@ -11,10 +11,34 @@ pub(super) fn should_retry(failure: &ModelCycleFailure, retries: u32) -> bool {
     failure.retryable && retries < MAX_MODEL_RETRIES
 }
 
+/// Uses Retry-After when the provider sent one. A wait longer than the
+/// remaining request budget is not started.
+pub(super) fn retry_wait(
+    message: &str,
+    default: Duration,
+    remaining: Duration,
+) -> Option<Duration> {
+    if remaining.is_zero() {
+        return None;
+    }
+    let requested = message
+        .split_whitespace()
+        .find_map(|token| {
+            token
+                .trim_end_matches(';')
+                .strip_prefix("retry_after_seconds=")
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .map(Duration::from_secs)
+        .unwrap_or(default);
+    (requested <= remaining).then_some(requested)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::run::{ModelCycleFailure, RunFailure};
+    use std::time::Duration;
 
     fn failure(retryable: bool) -> ModelCycleFailure {
         ModelCycleFailure {
@@ -26,6 +50,34 @@ mod tests {
             emitted_tool: false,
             terminal: false,
         }
+    }
+
+    #[test]
+    fn retry_after_is_used_until_the_budget_runs_out() {
+        assert_eq!(
+            retry_wait(
+                "retry_after_seconds=4; provider 429: wait",
+                Duration::from_secs(5),
+                Duration::from_secs(10)
+            ),
+            Some(Duration::from_secs(4))
+        );
+        assert_eq!(
+            retry_wait(
+                "retry_after_seconds=9; provider 429: wait",
+                Duration::from_secs(5),
+                Duration::from_secs(8)
+            ),
+            None
+        );
+        assert_eq!(
+            retry_wait(
+                "provider 503: down",
+                Duration::from_secs(5),
+                Duration::from_secs(10)
+            ),
+            Some(Duration::from_secs(5))
+        );
     }
 
     #[test]

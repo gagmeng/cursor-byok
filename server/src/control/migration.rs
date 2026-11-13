@@ -27,6 +27,14 @@ pub struct MigrationPluginResources {
     pub accounts: Vec<serde_json::Value>,
 }
 
+/// A plugin provider's saved model catalog, including which models are enabled.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MigrationPluginModels {
+    pub plugin_id: String,
+    pub provider_id: String,
+    pub models: Vec<serde_json::Value>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MigrationModel {
     pub model_hash: String,
@@ -42,16 +50,28 @@ pub struct MigrationFile {
     pub exported_at_ms: i64,
     pub models: Vec<MigrationModel>,
     pub plugin_resources: Vec<MigrationPluginResources>,
+    /// Absent on files exported before plugin catalogs were included.
+    #[serde(default)]
+    pub plugin_models: Vec<MigrationPluginModels>,
     pub model_system_prompts: Vec<ModelSystemPromptConfig>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MigrationResult {
     pub models_added: usize,
+    pub models_updated: usize,
     pub models_total: usize,
     pub resources_added: usize,
     pub resources_updated: usize,
+    pub plugin_models_added: usize,
+    pub plugin_models_updated: usize,
     pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreMode {
+    SkipExisting,
+    Overwrite,
 }
 
 pub async fn export(State(service): State<ControlService>) -> Result<axum::response::Response> {
@@ -165,6 +185,7 @@ mod tests {
             exported_at_ms: 0,
             models: Vec::new(),
             plugin_resources: Vec::new(),
+            plugin_models: Vec::new(),
             model_system_prompts: Vec::new(),
         };
         let json = serde_json::to_value(&file).unwrap();

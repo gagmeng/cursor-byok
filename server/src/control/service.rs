@@ -144,6 +144,27 @@ pub struct CallSummary {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct CallList {
+    pub calls: Vec<CallSummary>,
+    pub next: Option<CallCursor>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CallCursor {
+    pub created_at_ms: i64,
+    pub call_id: String,
+}
+
+impl CallCursor {
+    fn from(call: &CallSummary) -> Self {
+        Self {
+            created_at_ms: call.call.created_at_ms,
+            call_id: call.call.call_id.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CursorTraceDetail {
     pub trace: CursorRunTraceSummary,
     pub artifacts: Vec<CursorTraceArtifactDetail>,
@@ -277,6 +298,27 @@ impl ControlService {
                 },
             )
             .collect();
+        let plugin_models = self
+            .plugins
+            .persisted_model_exports()
+            .await?
+            .into_iter()
+            .map(|(plugin_id, provider_id, models)| {
+                let models = match models {
+                    serde_json::Value::Array(models) => models,
+                    other => {
+                        return Err(crate::Error::Config(format!(
+                        "plugin model backup for {plugin_id}/{provider_id} is not a list: {other}"
+                    )))
+                    }
+                };
+                Ok(super::migration::MigrationPluginModels {
+                    plugin_id,
+                    provider_id,
+                    models,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(MigrationFile {
             format: FORMAT.into(),
             version: VERSION,
@@ -284,6 +326,7 @@ impl ControlService {
             exported_at_ms: chrono::Utc::now().timestamp_millis(),
             models,
             plugin_resources,
+            plugin_models,
             model_system_prompts: self.store.model_system_prompts().await?,
         })
     }
@@ -294,7 +337,17 @@ impl ControlService {
         &self,
         file: super::migration::MigrationFile,
     ) -> Result<super::migration::MigrationResult> {
-        use super::migration::{MigrationResult, FORMAT, VERSION};
+        self.apply_migration(file, super::migration::RestoreMode::SkipExisting)
+            .await
+    }
+
+    pub async fn apply_migration(
+        &self,
+        file: super::migration::MigrationFile,
+        mode: super::migration::RestoreMode,
+    ) -> Result<super::migration::MigrationResult> {
+        use super::migration::{MigrationResult, RestoreMode, FORMAT, VERSION};
+        let overwrite = mode == RestoreMode::Overwrite;
 
         if file.format != FORMAT {
             return Err(Error::Config(format!(
@@ -315,9 +368,9 @@ impl ControlService {
             .iter()
             .map(|model| (model.model_hash.clone(), model.config.clone()))
             .collect::<Vec<_>>();
-        let models_added = self
+        let (models_added, models_updated) = self
             .store
-            .import_model_configuration(&imported, &file.model_system_prompts)
+            .import_model_configuration(&imported, &file.model_system_prompts, overwrite)
             .await?;
         let mut resources_added = 0;
         let mut resources_updated = 0;
@@ -329,11 +382,16 @@ impl ControlService {
                 "name": format!("{}-{}.json", group.plugin_id, group.resource_type),
                 "content": serde_json::to_string(&serde_json::json!({"accounts": group.accounts}))?,
             }]);
-            match self
-                .plugins
-                .import_missing_resources(&group.plugin_id, &group.resource_type, files)
-                .await
-            {
+            let imported = if overwrite {
+                self.plugins
+                    .import_resources(&group.plugin_id, &group.resource_type, files)
+                    .await
+            } else {
+                self.plugins
+                    .import_missing_resources(&group.plugin_id, &group.resource_type, files)
+                    .await
+            };
+            match imported {
                 Ok(response) => {
                     resources_added += response.added;
                     resources_updated += response.updated;
@@ -357,12 +415,42 @@ impl ControlService {
         }
         // Prompts and model references have already committed atomically.
         // Plugin prompts become eligible only after their resources are imported.
-        self.store.import_missing_system_prompts(&prompts).await?;
+        self.store
+            .import_missing_system_prompts(&prompts, overwrite)
+            .await?;
+        let mut plugin_models_added = 0;
+        let mut plugin_models_updated = 0;
+        for group in file.plugin_models {
+            match self
+                .plugins
+                .restore_models(
+                    &group.plugin_id,
+                    &group.provider_id,
+                    group.models,
+                    overwrite,
+                )
+                .await
+            {
+                Ok((added, updated)) => {
+                    plugin_models_added += added;
+                    plugin_models_updated += updated;
+                }
+                Err(error) => {
+                    return Err(crate::Error::Config(format!(
+                        "plugin model restore failed for {}/{}: {error}",
+                        group.plugin_id, group.provider_id
+                    )))
+                }
+            }
+        }
         Ok(MigrationResult {
             models_added,
+            models_updated,
             models_total,
             resources_added,
             resources_updated,
+            plugin_models_added,
+            plugin_models_updated,
             warnings,
         })
     }
@@ -782,10 +870,12 @@ impl ControlService {
         })
     }
 
-    pub async fn calls(&self, limit: i64) -> Result<Vec<CallSummary>> {
+    pub(crate) async fn calls(&self, mut query: crate::store::CallMatch) -> Result<CallList> {
+        let limit = query.limit.clamp(1, 500);
+        query.limit = limit + 1;
         let mut calls = self
             .store
-            .llm_calls(limit)
+            .llm_calls_matching(&query)
             .await?
             .into_iter()
             .map(|call| {
@@ -799,14 +889,26 @@ impl ControlService {
             .collect::<Vec<_>>();
         calls.extend(
             self.store
-                .official_cursor_traces(limit)
+                .official_cursor_traces_matching(&query)
                 .await?
                 .into_iter()
                 .map(official_call),
         );
-        calls.sort_by_key(|call| std::cmp::Reverse(call.call.created_at_ms));
-        calls.truncate(limit.clamp(1, 500) as usize);
-        Ok(calls)
+        calls.sort_by(|left, right| {
+            right
+                .call
+                .created_at_ms
+                .cmp(&left.call.created_at_ms)
+                .then(right.call.call_id.cmp(&left.call.call_id))
+        });
+        let has_more = calls.len() > limit as usize;
+        if has_more {
+            calls.truncate(limit as usize);
+        }
+        let next = has_more
+            .then(|| calls.last().map(CallCursor::from))
+            .flatten();
+        Ok(CallList { calls, next })
     }
 
     pub async fn call(&self, call_id: &str) -> Result<CallDetail> {
@@ -966,6 +1068,21 @@ impl ControlService {
         self.store.set_model_badge_settings(settings).await
     }
 
+    pub async fn request_budget(&self) -> Result<crate::store::RequestBudgetSettings> {
+        Ok(self
+            .store
+            .stored_request_budget()
+            .await?
+            .unwrap_or_default())
+    }
+
+    pub async fn set_request_budget(
+        &self,
+        settings: crate::store::RequestBudgetSettings,
+    ) -> Result<crate::store::RequestBudgetSettings> {
+        self.store.set_request_budget(settings).await
+    }
+
     pub async fn pricing_settings(&self) -> Result<TokenPricingSettings> {
         self.store.pricing_settings().await
     }
@@ -1043,6 +1160,13 @@ fn official_call(trace: CursorRunTraceSummary) -> CallSummary {
             error_kind: error.as_ref().map(|_| "cursor_official".into()),
             error_message: error,
             detailed: true,
+            phase: crate::model::call_phase(
+                &trace.status,
+                trace.first_response_at_ms,
+                trace.first_response_at_ms,
+                None,
+            ),
+            activity: None,
         },
         call_kind: "cursor_official",
         route: "cursor_official",

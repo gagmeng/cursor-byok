@@ -222,6 +222,60 @@ impl PluginStateStore {
         self.data.resource_snapshots().await
     }
 
+    pub async fn model_snapshots(&self) -> Result<Vec<(String, String, serde_json::Value)>> {
+        self.data.model_snapshots().await
+    }
+
+    /// Restores a saved model catalog. Skip keeps every id already on disk,
+    /// including its enabled flag. Overwrite replaces the catalog outright.
+    pub async fn restore_models(
+        &self,
+        plugin_id: &str,
+        provider_id: &str,
+        models: Vec<serde_json::Value>,
+        overwrite: bool,
+    ) -> Result<(usize, usize)> {
+        let incoming = models
+            .into_iter()
+            .map(|value| {
+                serde_json::from_value::<StoredModel>(value).map_err(|error| {
+                    Error::Config(format!(
+                        "plugin model backup cannot read {plugin_id}/{provider_id}: {error}"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.data
+            .modify(plugin_id, &model_key(provider_id), move |value| {
+                let previous: Vec<StoredModel> = if value.is_null() {
+                    Vec::new()
+                } else {
+                    serde_json::from_value(value)?
+                };
+                let (next, added, updated) = if overwrite {
+                    let added = incoming
+                        .iter()
+                        .filter(|model| !previous.iter().any(|old| old.id == model.id))
+                        .count();
+                    let updated = incoming.len().saturating_sub(added);
+                    (incoming, added, updated)
+                } else {
+                    let mut kept = previous;
+                    let mut added = 0;
+                    for model in incoming {
+                        if kept.iter().any(|old| old.id == model.id) {
+                            continue;
+                        }
+                        kept.push(model);
+                        added += 1;
+                    }
+                    (kept, added, 0)
+                };
+                Ok((serde_json::to_value(next)?, (added, updated)))
+            })
+            .await
+    }
+
     pub fn new(data: PluginDataStore) -> Self {
         Self { data }
     }

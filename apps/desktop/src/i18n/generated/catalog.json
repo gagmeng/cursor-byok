@@ -149,8 +149,13 @@
           "column": 8
         },
         {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 69,
+          "column": 64
+        },
+        {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 187,
+          "line": 189,
           "column": 82
         },
         {
@@ -206,7 +211,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 71,
+          "line": 72,
           "column": 54
         }
       ]
@@ -380,6 +385,18 @@
         }
       ]
     },
+    "0a379c1e7398fba1": {
+      "source": "全部状态",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 53,
+          "column": 31
+        }
+      ]
+    },
     "0addd7784578abf4": {
       "source": "取消中…",
       "kind": "text",
@@ -389,6 +406,18 @@
           "file": "features/diagnostics/ModelHealthPage.tsx",
           "line": 61,
           "column": 557
+        }
+      ]
+    },
+    "0b9157354ab262ae": {
+      "source": "错误信息",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 155,
+          "column": 15
         }
       ]
     },
@@ -437,22 +466,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 28,
-          "column": 61
+          "line": 29,
+          "column": 62
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 45,
+          "line": 46,
           "column": 42
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 53,
+          "line": 54,
           "column": 72
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 143,
+          "line": 144,
           "column": 51
         }
       ]
@@ -481,7 +510,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 104,
+          "line": 106,
           "column": 38
         }
       ]
@@ -493,12 +522,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 43,
+          "line": 44,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 132,
+          "line": 133,
           "column": 15
         }
       ]
@@ -510,7 +539,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 305,
+          "line": 309,
           "column": 26
         }
       ]
@@ -542,12 +571,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetailsPage.tsx",
-          "line": 32,
+          "line": 40,
           "column": 28
         },
         {
           "file": "features/calls/CallDetailsPage.tsx",
-          "line": 36,
+          "line": 45,
           "column": 41
         }
       ]
@@ -566,6 +595,21 @@
           "file": "features/settings/PricingSettingsCard.tsx",
           "line": 145,
           "column": 24
+        }
+      ]
+    },
+    "0f357422cc298053": {
+      "source": "{request} 秒 / 空闲 {idle} 秒",
+      "kind": "template",
+      "placeholders": [
+        "request",
+        "idle"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 68,
+          "column": 16
         }
       ]
     },
@@ -916,6 +960,18 @@
         }
       ]
     },
+    "1958387f67fc0068": {
+      "source": "请求超时已保存，下一次模型调用生效",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 42,
+          "column": 15
+        }
+      ]
+    },
     "19658d9fa9aa8de4": {
       "source": "安装中…",
       "kind": "text",
@@ -1042,7 +1098,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 309,
+          "line": 313,
           "column": 131
         }
       ]
@@ -1054,7 +1110,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 284,
+          "line": 288,
           "column": 71
         }
       ]
@@ -1116,17 +1172,17 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 74,
+          "line": 76,
           "column": 42
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 192,
+          "line": 194,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 219,
+          "line": 221,
           "column": 58
         }
       ]
@@ -1167,6 +1223,18 @@
         }
       ]
     },
+    "1ded6559f626109d": {
+      "source": "缓存读取",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 118,
+          "column": 15
+        }
+      ]
+    },
     "1e9f2561b7cf43c4": {
       "source": "通过",
       "kind": "text",
@@ -1191,6 +1259,18 @@
           "file": "shared/ui/ModelSelect.tsx",
           "line": 174,
           "column": 21
+        }
+      ]
+    },
+    "1ff923931bc5a73d": {
+      "source": "最近备份",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 54,
+          "column": 18
         }
       ]
     },
@@ -1249,12 +1329,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 261,
+          "line": 265,
           "column": 43
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 300,
+          "line": 304,
           "column": 89
         }
       ]
@@ -1271,6 +1351,23 @@
         }
       ]
     },
+    "224d09565689af77": {
+      "source": "自备模型",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 17,
+          "column": 67
+        },
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 67,
+          "column": 61
+        }
+      ]
+    },
     "227c48ea3f09aaf0": {
       "source": "在上方选择本地或 SSH，复制生成的指令到相应 Cursor 窗口的新对话中发送。",
       "kind": "text",
@@ -1283,6 +1380,18 @@
         }
       ]
     },
+    "228037dc1af5197e": {
+      "source": "相对当前配置",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 71,
+          "column": 18
+        }
+      ]
+    },
     "22c6b4eb4caee6ae": {
       "source": "代理设置已保存",
       "kind": "text",
@@ -1290,7 +1399,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 129,
+          "line": 131,
           "column": 15
         }
       ]
@@ -1319,7 +1428,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 332,
+          "line": 336,
           "column": 24
         }
       ]
@@ -1382,6 +1491,21 @@
       "placeholders": [],
       "refs": [
         {
+          "file": "features/calls/callLabels.ts",
+          "line": 11,
+          "column": 14
+        },
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 30,
+          "column": 14
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 56,
+          "column": 37
+        },
+        {
           "file": "features/diagnostics/DiagnosticsPage.tsx",
           "line": 65,
           "column": 265
@@ -1428,18 +1552,6 @@
           "file": "features/home/metrics/HomeMetrics.tsx",
           "line": 89,
           "column": 5
-        }
-      ]
-    },
-    "2a29e2e2e37cd761": {
-      "source": "把模型配置（含 API Key）和插件凭证打包成一个文件。文件包含密钥，请妥善保存。",
-      "kind": "text",
-      "placeholders": [],
-      "refs": [
-        {
-          "file": "features/settings/MigrationSettingsCard.tsx",
-          "line": 69,
-          "column": 19
         }
       ]
     },
@@ -1513,6 +1625,11 @@
           "column": 70
         },
         {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 86,
+          "column": 80
+        },
+        {
           "file": "features/settings/CommitSettingsCard.tsx",
           "line": 167,
           "column": 78
@@ -1538,13 +1655,18 @@
           "column": 66
         },
         {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 66,
+          "column": 13
+        },
+        {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 183,
+          "line": 185,
           "column": 81
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 324,
+          "line": 328,
           "column": 22
         },
         {
@@ -1616,12 +1738,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 45,
+          "line": 46,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 142,
+          "line": 143,
           "column": 15
         }
       ]
@@ -1659,7 +1781,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 153,
+          "line": 155,
           "column": 15
         }
       ]
@@ -1700,7 +1822,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 24,
+          "line": 25,
           "column": 6
         }
       ]
@@ -1872,7 +1994,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 246,
+          "line": 250,
           "column": 27
         }
       ]
@@ -1952,7 +2074,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 334,
+          "line": 338,
           "column": 42
         }
       ]
@@ -1976,7 +2098,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 54,
+          "line": 55,
           "column": 32
         }
       ]
@@ -2005,7 +2127,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 63,
+          "line": 64,
           "column": 39
         }
       ]
@@ -2017,7 +2139,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 316,
+          "line": 320,
           "column": 14
         }
       ]
@@ -2051,7 +2173,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 246,
+          "line": 250,
           "column": 39
         }
       ]
@@ -2103,6 +2225,11 @@
       "placeholders": [],
       "refs": [
         {
+          "file": "features/calls/CallTable.tsx",
+          "line": 103,
+          "column": 15
+        },
+        {
           "file": "features/home/charts/TokenTrendChart.tsx",
           "line": 16,
           "column": 15
@@ -2142,12 +2269,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 253,
+          "line": 257,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 259,
+          "line": 263,
           "column": 26
         }
       ]
@@ -2159,7 +2286,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 289,
+          "line": 293,
           "column": 19
         }
       ]
@@ -2185,6 +2312,23 @@
           "file": "features/settings/TabSettingsCard.tsx",
           "line": 68,
           "column": 21
+        }
+      ]
+    },
+    "3fbb93469a748f16": {
+      "source": "调用 ID",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 15,
+          "column": 6
+        },
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 161,
+          "column": 15
         }
       ]
     },
@@ -2246,7 +2390,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 160,
+          "line": 162,
           "column": 66
         }
       ]
@@ -2258,8 +2402,20 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 300,
+          "line": 304,
           "column": 77
+        }
+      ]
+    },
+    "41f9e2c6862c9aab": {
+      "source": "返回调用列表",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetailsPage.tsx",
+          "line": 44,
+          "column": 53
         }
       ]
     },
@@ -2311,12 +2467,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 56,
+          "line": 57,
           "column": 39
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 63,
+          "line": 64,
           "column": 68
         }
       ]
@@ -2447,6 +2603,40 @@
           "file": "features/diagnostics/ModelHealthPage.tsx",
           "line": 45,
           "column": 26
+        }
+      ]
+    },
+    "4847476139758153": {
+      "source": "配置备份",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 51,
+          "column": 29
+        }
+      ]
+    },
+    "484d55613910eb8c": {
+      "source": "无",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 73,
+          "column": 52
+        },
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 74,
+          "column": 56
+        },
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 75,
+          "column": 57
         }
       ]
     },
@@ -2657,6 +2847,23 @@
         }
       ]
     },
+    "4bd4586222c9d522": {
+      "source": "第 {attempt}/{limit} 次重试，{delay} 秒后继续：{message}",
+      "kind": "template",
+      "placeholders": [
+        "attempt",
+        "limit",
+        "delay",
+        "message"
+      ],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 50,
+          "column": 14
+        }
+      ]
+    },
     "4d0680f9efaef147": {
       "source": "未读",
       "kind": "text",
@@ -2747,6 +2954,18 @@
         }
       ]
     },
+    "5164b0352a7892a9": {
+      "source": "加载更早的记录",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 78,
+          "column": 133
+        }
+      ]
+    },
     "51d04bc3d286f018": {
       "source": "近1自然日",
       "kind": "text",
@@ -2818,7 +3037,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 181,
+          "line": 183,
           "column": 26
         }
       ]
@@ -3004,7 +3223,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 239,
+          "line": 243,
           "column": 78
         }
       ]
@@ -3086,7 +3305,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 243,
+          "line": 247,
           "column": 21
         }
       ]
@@ -3146,6 +3365,18 @@
         }
       ]
     },
+    "5b31cf26bae83451": {
+      "source": "等待首个事件",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 24,
+          "column": 14
+        }
+      ]
+    },
     "5ba65a74c4e792c5": {
       "source": "按类型",
       "kind": "text",
@@ -3170,12 +3401,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 271,
+          "line": 275,
           "column": 26
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 274,
+          "line": 278,
           "column": 24
         }
       ]
@@ -3244,6 +3475,18 @@
           "file": "features/diagnostics/ModelHealthPage.tsx",
           "line": 47,
           "column": 26
+        }
+      ]
+    },
+    "5e4c0d7bd5e18ec7": {
+      "source": "把模型配置（含 API Key）、插件凭证和插件模型目录打包成一个文件。文件包含密钥，请妥善保存。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/MigrationSettingsCard.tsx",
+          "line": 69,
+          "column": 19
         }
       ]
     },
@@ -3320,6 +3563,11 @@
       "placeholders": [],
       "refs": [
         {
+          "file": "features/calls/CallTable.tsx",
+          "line": 123,
+          "column": 15
+        },
+        {
           "file": "features/home/charts/DailyTokenUsageChart.tsx",
           "line": 103,
           "column": 45
@@ -3376,8 +3624,20 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 51,
+          "line": 52,
           "column": 29
+        }
+      ]
+    },
+    "61ed3a0741f52ef4": {
+      "source": "超时必须是整数秒",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 34,
+          "column": 15
         }
       ]
     },
@@ -3407,6 +3667,30 @@
         }
       ]
     },
+    "62705e95377b2505": {
+      "source": "调用状态",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 50,
+          "column": 20
+        }
+      ]
+    },
+    "631c1120c5729797": {
+      "source": "总超时（秒）",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 57,
+          "column": 27
+        }
+      ]
+    },
     "6320b4a8722a851f": {
       "source": "状态",
       "kind": "text",
@@ -3414,12 +3698,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 29,
+          "line": 30,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 16,
+          "line": 17,
           "column": 15
         }
       ]
@@ -3510,8 +3794,8 @@
       "refs": [
         {
           "file": "features/calls/CallsPage.tsx",
-          "line": 33,
-          "column": 36
+          "line": 79,
+          "column": 31
         }
       ]
     },
@@ -3551,12 +3835,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 44,
+          "line": 45,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 137,
+          "line": 138,
           "column": 15
         }
       ]
@@ -3623,7 +3907,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 104,
+          "line": 106,
           "column": 55
         }
       ]
@@ -3876,6 +4160,18 @@
         }
       ]
     },
+    "70d6ac580a3c62b2": {
+      "source": "首字节",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 88,
+          "column": 15
+        }
+      ]
+    },
     "72644ec4389da2f7": {
       "source": "默认平铺",
       "kind": "text",
@@ -3900,7 +4196,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 171,
+          "line": 173,
           "column": 16
         }
       ]
@@ -3919,6 +4215,18 @@
           "file": "shell/AppLayout.tsx",
           "line": 63,
           "column": 50
+        }
+      ]
+    },
+    "757dbba81e9ee445": {
+      "source": "首个文本",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 98,
+          "column": 15
         }
       ]
     },
@@ -3953,7 +4261,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 292,
+          "line": 296,
           "column": 26
         }
       ]
@@ -3977,7 +4285,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 660,
+          "line": 721,
           "column": 43
         }
       ]
@@ -4013,7 +4321,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 325,
+          "line": 329,
           "column": 23
         }
       ]
@@ -4092,7 +4400,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 147,
+          "line": 149,
           "column": 83
         }
       ]
@@ -4194,6 +4502,18 @@
         }
       ]
     },
+    "8064dbb242fc29c1": {
+      "source": "调用序号",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 179,
+          "column": 15
+        }
+      ]
+    },
     "80a57e03f0717f91": {
       "source": "未配置",
       "kind": "text",
@@ -4230,13 +4550,25 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 551,
+          "line": 612,
           "column": 39
         },
         {
           "file": "shared/api.ts",
-          "line": 572,
+          "line": 633,
           "column": 21
+        }
+      ]
+    },
+    "817eed9628debea9": {
+      "source": "总超时是单次模型请求的上限。流空闲是等待下一个事件的时间，思考模型可以单独加大。429 的 Retry-After 不会超过剩余总超时。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 54,
+          "column": 17
         }
       ]
     },
@@ -4405,22 +4737,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 15,
+          "line": 16,
           "column": 56
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 16,
+          "line": 17,
           "column": 50
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 60,
+          "line": 61,
           "column": 48
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 66,
+          "line": 67,
           "column": 44
         }
       ]
@@ -4526,8 +4858,20 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 36,
+          "line": 37,
           "column": 15
+        }
+      ]
+    },
+    "8b7f52f0dbb6ed9f": {
+      "source": "请求超时",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 50,
+          "column": 29
         }
       ]
     },
@@ -4555,7 +4899,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 242,
+          "line": 246,
           "column": 22
         }
       ]
@@ -4567,12 +4911,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 15,
+          "line": 16,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 58,
+          "line": 59,
           "column": 15
         }
       ]
@@ -4615,6 +4959,18 @@
           "file": "features/settings/TabSettingsCard.tsx",
           "line": 52,
           "column": 21
+        }
+      ]
+    },
+    "90219af1f0111412": {
+      "source": "覆盖已有",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 85,
+          "column": 89
         }
       ]
     },
@@ -4699,8 +5055,20 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 163,
+          "line": 165,
           "column": 7
+        }
+      ]
+    },
+    "924e6e703516d632": {
+      "source": "首个有效响应",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 93,
+          "column": 15
         }
       ]
     },
@@ -4778,6 +5146,18 @@
         }
       ]
     },
+    "9638021caee5231a": {
+      "source": "总 Token",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 113,
+          "column": 15
+        }
+      ]
+    },
     "966498853d801a52": {
       "source": "TAB 选择",
       "kind": "text",
@@ -4797,6 +5177,18 @@
           "file": "features/settings/TabSettingsCard.tsx",
           "line": 80,
           "column": 20
+        }
+      ]
+    },
+    "969ef41f7e5bf3a8": {
+      "source": "生成中",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 26,
+          "column": 14
         }
       ]
     },
@@ -4854,6 +5246,18 @@
           "file": "features/models/MagpieModelImport.tsx",
           "line": 281,
           "column": 25
+        }
+      ]
+    },
+    "98ee7e7457d808cd": {
+      "source": "推理 Token",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 128,
+          "column": 15
         }
       ]
     },
@@ -4924,12 +5328,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 27,
+          "line": 28,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 47,
+          "line": 48,
           "column": 15
         },
         {
@@ -5054,7 +5458,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 250,
+          "line": 254,
           "column": 26
         }
       ]
@@ -5091,6 +5495,11 @@
       "placeholders": [],
       "refs": [
         {
+          "file": "features/calls/CallTable.tsx",
+          "line": 108,
+          "column": 15
+        },
+        {
           "file": "features/home/charts/TokenTrendChart.tsx",
           "line": 17,
           "column": 15
@@ -5104,7 +5513,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 67,
+          "line": 69,
           "column": 34
         }
       ]
@@ -5156,6 +5565,20 @@
           "file": "features/diagnostics/ModelHealthPage.tsx",
           "line": 49,
           "column": 26
+        }
+      ]
+    },
+    "a187aec588c9f629": {
+      "source": "最近一次备份失败：{error}",
+      "kind": "template",
+      "placeholders": [
+        "error"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 56,
+          "column": 39
         }
       ]
     },
@@ -5244,8 +5667,13 @@
           "column": 103
         },
         {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 59,
+          "column": 98
+        },
+        {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 184,
+          "line": 186,
           "column": 133
         },
         {
@@ -5292,6 +5720,21 @@
       "placeholders": [],
       "refs": [
         {
+          "file": "features/calls/callLabels.ts",
+          "line": 13,
+          "column": 14
+        },
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 32,
+          "column": 14
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 57,
+          "column": 40
+        },
+        {
           "file": "features/diagnostics/ModelHealthPage.tsx",
           "line": 61,
           "column": 284
@@ -5305,7 +5748,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 59,
+          "line": 60,
           "column": 44
         }
       ]
@@ -5448,12 +5891,12 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 186,
+          "line": 187,
           "column": 32
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 189,
+          "line": 190,
           "column": 25
         },
         {
@@ -5472,6 +5915,33 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 168,
           "column": 61
+        }
+      ]
+    },
+    "a76bd2d8b6ba14bc": {
+      "source": "会话 ID",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 19,
+          "column": 6
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 70,
+          "column": 21
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 72,
+          "column": 22
+        },
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 173,
+          "column": 15
         }
       ]
     },
@@ -5498,6 +5968,18 @@
           "file": "features/models/RemoteSshHelp.tsx",
           "line": 24,
           "column": 11
+        }
+      ]
+    },
+    "a898478be1813b95": {
+      "source": "连接中",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 22,
+          "column": 14
         }
       ]
     },
@@ -5532,18 +6014,32 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 26,
+          "line": 27,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 30,
+          "line": 31,
           "column": 15
         },
         {
           "file": "features/models/CursorModelEditor.tsx",
           "line": 173,
           "column": 25
+        }
+      ]
+    },
+    "aaccccaf36fd8478": {
+      "source": "切换到 {target}",
+      "kind": "template",
+      "placeholders": [
+        "target"
+      ],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 57,
+          "column": 43
         }
       ]
     },
@@ -5694,7 +6190,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetailsPage.tsx",
-          "line": 32,
+          "line": 40,
           "column": 69
         }
       ]
@@ -5858,6 +6354,18 @@
         }
       ]
     },
+    "b35001374ea98a40": {
+      "source": "查看差异",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 65,
+          "column": 115
+        }
+      ]
+    },
     "b4411558b932266f": {
       "source": "上游类型",
       "kind": "text",
@@ -5865,7 +6373,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 21,
+          "line": 22,
           "column": 6
         }
       ]
@@ -5915,22 +6423,22 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 28,
-          "column": 52
+          "line": 29,
+          "column": 53
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 45,
+          "line": 46,
           "column": 33
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 53,
+          "line": 54,
           "column": 63
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 143,
+          "line": 144,
           "column": 42
         }
       ]
@@ -5966,7 +6474,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 160,
+          "line": 162,
           "column": 45
         }
       ]
@@ -5992,8 +6500,25 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 308,
+          "line": 312,
           "column": 22
+        }
+      ]
+    },
+    "b80b7260242001d4": {
+      "source": "运行 ID",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 18,
+          "column": 6
+        },
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 167,
+          "column": 15
         }
       ]
     },
@@ -6040,12 +6565,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 16,
+          "line": 17,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 64,
+          "line": 65,
           "column": 15
         }
       ]
@@ -6120,6 +6645,18 @@
         }
       ]
     },
+    "ba8c97a5822bba41": {
+      "source": "流空闲（秒）",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 58,
+          "column": 27
+        }
+      ]
+    },
     "baff6c144180b185": {
       "source": "连通性测试完成：成功 {successful}，失败 {failed}",
       "kind": "template",
@@ -6142,12 +6679,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 69,
+          "line": 70,
           "column": 62
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 74,
+          "line": 75,
           "column": 20
         }
       ]
@@ -6162,7 +6699,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 309,
+          "line": 313,
           "column": 31
         }
       ]
@@ -6174,7 +6711,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 300,
+          "line": 304,
           "column": 40
         }
       ]
@@ -6188,6 +6725,23 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 245,
           "column": 7
+        }
+      ]
+    },
+    "bc9b653fb09406ea": {
+      "source": "模型调用",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 16,
+          "column": 73
+        },
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 61,
+          "column": 65
         }
       ]
     },
@@ -6234,7 +6788,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 278,
+          "line": 282,
           "column": 35
         }
       ]
@@ -6335,6 +6889,18 @@
         }
       ]
     },
+    "c11ddf25e2b737d7": {
+      "source": "总超时与流空闲",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 53,
+          "column": 18
+        }
+      ]
+    },
     "c19d4b2bd8f39f22": {
       "source": "迁移文件无法读取，可能已损坏",
       "kind": "text",
@@ -6361,6 +6927,18 @@
         }
       ]
     },
+    "c270415855564785": {
+      "source": "无法读取",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 63,
+          "column": 112
+        }
+      ]
+    },
     "c3760858cdb6d9f4": {
       "source": "请求体",
       "kind": "text",
@@ -6368,12 +6946,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 58,
+          "line": 59,
           "column": 14
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 58,
+          "line": 59,
           "column": 51
         }
       ]
@@ -6504,7 +7082,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetailsPage.tsx",
-          "line": 29,
+          "line": 37,
           "column": 26
         }
       ]
@@ -6514,6 +7092,16 @@
       "kind": "text",
       "placeholders": [],
       "refs": [
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 62,
+          "column": 21
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 64,
+          "column": 22
+        },
         {
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
           "line": 152,
@@ -6617,7 +7205,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 41,
+          "line": 42,
           "column": 15
         },
         {
@@ -6673,6 +7261,30 @@
         }
       ]
     },
+    "cd2c1322baa0f5a3": {
+      "source": "启动时和之后每天各写一份，保留最近 7 份。恢复前会先写下当前配置。跳过保留已有标识，覆盖会改成备份里的内容。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 55,
+          "column": 17
+        }
+      ]
+    },
+    "cdf04d177367ecf5": {
+      "source": "结束原因",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 77,
+          "column": 15
+        }
+      ]
+    },
     "ce1ca0a2d377e2c4": {
       "source": "图片理解",
       "kind": "text",
@@ -6692,12 +7304,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 57,
+          "line": 58,
           "column": 14
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 57,
+          "line": 58,
           "column": 51
         }
       ]
@@ -6709,12 +7321,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 169,
+          "line": 171,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 175,
+          "line": 177,
           "column": 20
         }
       ]
@@ -6726,7 +7338,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 206,
+          "line": 208,
           "column": 21
         }
       ]
@@ -6755,6 +7367,18 @@
           "file": "features/settings/MigrationSettingsCard.tsx",
           "line": 95,
           "column": 16
+        }
+      ]
+    },
+    "d08f0ea4c249789f": {
+      "source": "跳过已有",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 84,
+          "column": 84
         }
       ]
     },
@@ -6789,7 +7413,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 162,
+          "line": 164,
           "column": 7
         }
       ]
@@ -7169,6 +7793,23 @@
         }
       ]
     },
+    "db945cfe9f9f8ffe": {
+      "source": "快速",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallDetails.tsx",
+          "line": 29,
+          "column": 6
+        },
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 53,
+          "column": 15
+        }
+      ]
+    },
     "dbd3596e4a86f3c2": {
       "source": "配置模型",
       "kind": "text",
@@ -7178,6 +7819,23 @@
           "file": "features/models/LegacyModelImport.tsx",
           "line": 69,
           "column": 56
+        }
+      ]
+    },
+    "dc9591e56d502b43": {
+      "source": "进行中",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 6,
+          "column": 14
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 54,
+          "column": 38
         }
       ]
     },
@@ -7313,7 +7971,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 344,
+          "line": 348,
           "column": 30
         },
         {
@@ -7330,12 +7988,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 61,
+          "line": 62,
           "column": 33
         },
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 64,
+          "line": 65,
           "column": 32
         }
       ]
@@ -7421,7 +8079,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 19,
+          "line": 20,
           "column": 6
         }
       ]
@@ -7529,6 +8187,27 @@
         }
       ]
     },
+    "e4571111abf0fecb": {
+      "source": "新增模型：{added}。变更模型：{changed}。仅本地有：{local}。未变：{same}。插件模型新增 {pluginAdded}，变更 {pluginChanged}。凭证新增 {accountsAdded}，变更 {accountsChanged}。",
+      "kind": "template",
+      "placeholders": [
+        "added",
+        "changed",
+        "local",
+        "same",
+        "pluginAdded",
+        "pluginChanged",
+        "accountsAdded",
+        "accountsChanged"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 72,
+          "column": 17
+        }
+      ]
+    },
     "e4760c6a1df24f17": {
       "source": "完整请求 URL",
       "kind": "text",
@@ -7589,7 +8268,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 80,
+          "line": 82,
           "column": 17
         }
       ]
@@ -7628,12 +8307,12 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 33,
+          "line": 34,
           "column": 6
         },
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 82,
+          "line": 83,
           "column": 15
         }
       ]
@@ -7732,7 +8411,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 166,
+          "line": 168,
           "column": 26
         }
       ]
@@ -7756,7 +8435,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 22,
+          "line": 23,
           "column": 6
         }
       ]
@@ -7833,7 +8512,7 @@
       "refs": [
         {
           "file": "features/calls/CallTable.tsx",
-          "line": 183,
+          "line": 184,
           "column": 15
         },
         {
@@ -7886,7 +8565,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 225,
+          "line": 227,
           "column": 16
         }
       ]
@@ -7922,6 +8601,56 @@
         }
       ]
     },
+    "ef977d9c172620d5": {
+      "source": "还没有备份",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 61,
+          "column": 56
+        }
+      ]
+    },
+    "f28461bb49c85647": {
+      "source": "已完成",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 8,
+          "column": 14
+        },
+        {
+          "file": "features/calls/callLabels.ts",
+          "line": 28,
+          "column": 14
+        },
+        {
+          "file": "features/calls/CallsPage.tsx",
+          "line": 55,
+          "column": 40
+        }
+      ]
+    },
+    "f2d19a383b4108a9": {
+      "source": "已从备份恢复。恢复前的快照是 {snapshot}。新增模型 {added} 个，覆盖模型 {updated} 个。",
+      "kind": "template",
+      "placeholders": [
+        "snapshot",
+        "added",
+        "updated"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/BackupSettingsCard.tsx",
+          "line": 39,
+          "column": 15
+        }
+      ]
+    },
     "f4694c46b1e19602": {
       "source": "最终请求类型",
       "kind": "text",
@@ -7929,7 +8658,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 23,
+          "line": 24,
           "column": 6
         }
       ]
@@ -8095,7 +8824,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 254,
+          "line": 258,
           "column": 21
         }
       ]
@@ -8198,7 +8927,7 @@
       "refs": [
         {
           "file": "features/calls/CallDetails.tsx",
-          "line": 65,
+          "line": 66,
           "column": 44
         }
       ]
@@ -8210,7 +8939,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 193,
+          "line": 195,
           "column": 21
         }
       ]
@@ -8326,6 +9055,18 @@
           "file": "features/models/CursorBadgeSettings.tsx",
           "line": 59,
           "column": 36
+        }
+      ]
+    },
+    "fc7a7ed416a1e243": {
+      "source": "错误类型",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/calls/CallTable.tsx",
+          "line": 149,
+          "column": 15
         }
       ]
     },
@@ -8473,7 +9214,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 335,
+          "line": 339,
           "column": 38
         }
       ]
@@ -8504,8 +9245,13 @@
           "column": 91
         },
         {
+          "file": "features/settings/RequestBudgetSettingsCard.tsx",
+          "line": 59,
+          "column": 86
+        },
+        {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 184,
+          "line": 186,
           "column": 121
         },
         {
@@ -8534,17 +9280,17 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 75,
+          "line": 77,
           "column": 46
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 205,
+          "line": 207,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 220,
+          "line": 222,
           "column": 58
         }
       ]

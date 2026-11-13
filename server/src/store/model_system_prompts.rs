@@ -14,12 +14,17 @@ impl Store {
     pub async fn import_missing_system_prompts(
         &self,
         configs: &[ModelSystemPromptConfig],
+        overwrite: bool,
     ) -> Result<()> {
         ModelSystemPromptConfig::validate_all(configs)?;
         let mut session = self.write_session().await?;
         let mut tx = session.begin().await?;
         for config in configs {
-            insert_missing(&mut tx, config).await?;
+            if overwrite {
+                upsert_prompt(&mut tx, config).await?;
+            } else {
+                insert_missing(&mut tx, config).await?;
+            }
         }
         tx.commit().await?;
         session.committed();
@@ -262,5 +267,28 @@ pub(super) async fn insert_missing(
     sqlx::query("INSERT INTO model_system_prompts(model_id, enabled, content, position, updated_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(model_id) DO NOTHING")
         .bind(&config.model_id).bind(config.settings.enabled).bind(&config.settings.content)
         .bind(config.settings.position.as_str()).bind(now_ms()).execute(tx).await?;
+    Ok(())
+}
+
+pub(super) async fn upsert_prompt(
+    tx: &mut SqliteConnection,
+    config: &ModelSystemPromptConfig,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO model_system_prompts(model_id, enabled, content, position, updated_at_ms)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(model_id) DO UPDATE SET
+            enabled = excluded.enabled,
+            content = excluded.content,
+            position = excluded.position,
+            updated_at_ms = excluded.updated_at_ms",
+    )
+    .bind(&config.model_id)
+    .bind(config.settings.enabled)
+    .bind(&config.settings.content)
+    .bind(config.settings.position.as_str())
+    .bind(now_ms())
+    .execute(tx)
+    .await?;
     Ok(())
 }

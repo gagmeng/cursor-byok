@@ -89,14 +89,18 @@ export interface MigrationFile {
   exported_at_ms: number;
   models: (ModelInput & { model_hash: string })[];
   plugin_resources: { plugin_id: string; resource_type: string; accounts: unknown[] }[];
+  plugin_models?: { plugin_id: string; provider_id: string; models: unknown[] }[];
   model_system_prompts: (ModelSystemPromptSettings & { model_id: string })[];
 }
 
 export interface MigrationResult {
   models_added: number;
+  models_updated?: number;
   models_total: number;
   resources_added: number;
   resources_updated: number;
+  plugin_models_added?: number;
+  plugin_models_updated?: number;
   warnings: string[];
 }
 
@@ -505,6 +509,63 @@ export interface LlmCall {
   error_kind: string | null;
   error_message: string | null;
   detailed: boolean;
+  phase: string;
+  activity: string | null;
+}
+
+export interface CallCursor {
+  created_at_ms: number;
+  call_id: string;
+}
+
+export interface CallPage {
+  calls: LlmCall[];
+  next: CallCursor | null;
+}
+
+export interface CallFilter {
+  limit?: number;
+  before?: CallCursor | null;
+  status?: string;
+  conversationId?: string;
+  model?: string;
+}
+
+export interface RequestBudgetSettings {
+  request_timeout_seconds: number;
+  stream_idle_timeout_seconds: number;
+}
+
+export interface BackupFile {
+  name: string;
+  bytes: number;
+  exported_at_ms: number | null;
+  readable: boolean;
+}
+
+export interface BackupIndex {
+  last_error: string | null;
+  last_error_at_ms: number | null;
+  backups: BackupFile[];
+}
+
+export interface BackupPreview {
+  name: string;
+  exported_at_ms: number;
+  models_added: string[];
+  models_changed: string[];
+  models_unchanged: number;
+  models_only_local: string[];
+  plugin_models_added: string[];
+  plugin_models_changed: string[];
+  plugin_models_only_local: string[];
+  accounts_added: number;
+  accounts_changed: number;
+}
+
+export interface BackupRestore {
+  snapshot: string;
+  result: MigrationResult;
 }
 
 export interface CallDetail {
@@ -667,13 +728,24 @@ export const api = {
     await writeText(text);
   },
   setCursorEnabled: (enabled: boolean) => request<CursorHarnessStatus>("/harness/cursor/enabled", { method: "PUT", body: JSON.stringify({ enabled }) }),
-  calls: () => request<LlmCall[]>("/llm-calls?limit=200"),
-  call: (id: string) => request<CallDetail>(`/llm-calls/${encodeURIComponent(id)}`),
-  openCallDetails: async (id: string) => {
-    const url = new URL(window.location.href);
-    url.hash = `/calls/${encodeURIComponent(id)}`;
-    await request<void>("/desktop/open-external-url", { method: "POST", body: JSON.stringify({ url: url.toString() }) });
+  calls: (filter: CallFilter = {}) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(filter.limit ?? 50));
+    if (filter.before) {
+      params.set("before_created_at_ms", String(filter.before.created_at_ms));
+      params.set("before_call_id", filter.before.call_id);
+    }
+    if (filter.status) params.set("status", filter.status);
+    if (filter.conversationId) params.set("conversation_id", filter.conversationId);
+    if (filter.model) params.set("model", filter.model);
+    return request<CallPage>(`/llm-calls?${params}`);
   },
+  call: (id: string) => request<CallDetail>(`/llm-calls/${encodeURIComponent(id)}`),
+  requestBudget: () => request<RequestBudgetSettings>("/settings/request-budget"),
+  setRequestBudget: (settings: RequestBudgetSettings) => request<RequestBudgetSettings>("/settings/request-budget", { method: "PUT", body: JSON.stringify(settings) }),
+  backups: () => request<BackupIndex>("/backups"),
+  previewBackup: (name: string) => request<BackupPreview>(`/backups/${encodeURIComponent(name)}/preview`, { method: "POST" }),
+  restoreBackup: (name: string, mode: "skip" | "overwrite") => request<BackupRestore>(`/backups/${encodeURIComponent(name)}/restore`, { method: "POST", body: JSON.stringify({ mode }) }),
   openExternalUrl: (url: string) => request<void>("/desktop/open-external-url", { method: "POST", body: JSON.stringify({ url }) }),
   observability: () => request<{ detailed: boolean }>("/settings/observability"),
   setObservability: (detailed: boolean) => request<{ detailed: boolean }>("/settings/observability", { method: "PUT", body: JSON.stringify({ detailed }) }),

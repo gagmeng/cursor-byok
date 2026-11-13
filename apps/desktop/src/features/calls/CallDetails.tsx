@@ -1,4 +1,5 @@
 import type { CallDetail } from "../../shared/api";
+import { callStateText } from "./callLabels";
 import { JsonEditor } from "../../shared/ui/JsonEditor";
 import { Tabs, type TabItem } from "../../shared/ui/Tabs";
 import styles from "./CallDetails.module.scss";
@@ -11,11 +12,11 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
   const responseBody = chunks.map((chunk) => chunk.data).join("");
   const responseBytes = chunks.reduce((total, chunk) => total + chunk.byte_count, 0);
   const fields: Array<[string, string | number]> = [
-    ["Call ID", call.call_id],
-    [t("调用类型"), call.call_kind === "cursor_official" ? t("Cursor 官方") : "LLM"],
-    [t("路由"), call.route === "cursor_official" ? t("Cursor 官方") : "BYOK"],
-    ["Run ID", call.run_id],
-    ["Conversation ID", call.conversation_id],
+    [t("调用 ID"), call.call_id],
+    [t("调用类型"), call.call_kind === "cursor_official" ? t("Cursor 官方") : t("模型调用")],
+    [t("路由"), call.route === "cursor_official" ? t("Cursor 官方") : t("自备模型")],
+    [t("运行 ID"), call.run_id],
+    [t("会话 ID"), call.conversation_id],
     [t("上游调用序号"), call.provider_call_index],
     ["Model Hash", show(call.model_hash)],
     [t("上游类型"), call.provider_type],
@@ -25,8 +26,8 @@ export function CallDetails({ detail }: { detail: CallDetail }) {
     ["Model ID", call.model_id],
     [t("显示名称"), call.display_name],
     [t("思考强度"), show(call.reasoning_effort)],
-    ["Fast", call.fast == null ? "-" : call.fast ? t("是") : t("否")],
-    [t("状态"), call.status],
+    [t("快速"), call.fast == null ? "-" : call.fast ? t("是") : t("否")],
+    [t("状态"), callStateText(call)],
     ["Finish Reason", show(call.finish_reason)],
     ["HTTP Status", show(call.http_status)],
     ["Created At", `${call.created_at_ms} · ${new Date(call.created_at_ms).toLocaleString()}`],

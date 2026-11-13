@@ -10,7 +10,7 @@ async function store(api) {
   const js = stripTypeScriptTypes(stripped);
   return new Function("api", "localStorage", "window", "applyTheme", "isThemeId", `${js}; return appStore;`)(api, { getItem: () => null }, { matchMedia: () => ({ addEventListener() {} }) }, () => {}, () => false);
 }
-const base = () => ({models: async () => [], calls: async () => [], overview: async () => ({}), observability: async () => ({ detailed: false }), ports: async () => ({}), pricingSettings: async () => ({}), cursorHarness: async () => ({}), pluginRuntime: async () => ({}), plugins: async () => []});
+const base = () => ({models: async () => [], calls: async () => ({ calls: [], next: null }), overview: async () => ({}), observability: async () => ({ detailed: false }), ports: async () => ({}), pricingSettings: async () => ({}), cursorHarness: async () => ({}), pluginRuntime: async () => ({}), plugins: async () => []});
 test("a_failed_cursor_status_does_not_hide_successful_model_data", async () => {
   const api = base();
   api.models = async () => [{model_hash: "usable"}];

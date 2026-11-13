@@ -34,14 +34,32 @@ where
         return Ok(Attempt::Response(response));
     }
     let status = response.status();
+    let retry_after = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_retry_after);
     let bytes = tokio::select! {
         _ = cancellation.cancelled() => return Ok(Attempt::Cancelled),
         bytes = response.bytes() => bytes,
     }?;
+    let retry_after = retry_after
+        .map(|seconds| format!("retry_after_seconds={seconds}; "))
+        .unwrap_or_default();
     Err(Error::Provider(format!(
-        "{label} {status}: {}",
+        "{retry_after}{label} {status}: {}",
         String::from_utf8_lossy(&bytes)
     )))
+}
+
+fn parse_retry_after(value: &str) -> Option<u64> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(seconds);
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let wait = date.timestamp() - chrono::Utc::now().timestamp();
+    Some(wait.max(0) as u64)
 }
 
 #[cfg(test)]
@@ -75,6 +93,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rate_limit_keeps_retry_after_on_the_error() {
+        let url = server(
+            b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 3\r\nContent-Length: 4\r\n\r\nwait",
+        )
+        .await;
+        let client = reqwest::Client::new();
+        let error = send_once("test", || client.get(&url), &CancellationToken::new(), None)
+            .await
+            .unwrap_err();
+        let Error::Provider(message) = error else {
+            panic!("expected provider error");
+        };
+        assert!(message.contains("retry_after_seconds=3"), "{message}");
+        assert!(message.contains("429"), "{message}");
+    }
+
+    #[tokio::test]
     async fn response_body_transport_failure_is_one_failed_attempt() {
         let url =
             server(b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 100\r\n\r\nshort").await;
@@ -91,10 +126,13 @@ mod tests {
         let address = listener.local_addr().unwrap();
         drop(listener);
         let url = format!("http://{address}");
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let error = send_once("test", || client.get(&url), &CancellationToken::new(), None)
             .await
             .unwrap_err();
-        assert!(matches!(error, Error::Http(_)));
+        assert!(
+            matches!(error, Error::Http(_)),
+            "connection failure stays one HTTP attempt: {error}"
+        );
     }
 }

@@ -56,6 +56,13 @@ impl Provider for ProviderRouter {
         let request_timeout = self.request_timeout;
         let stream_idle_timeout = self.stream_idle_timeout;
         Box::pin(try_stream! {
+            let configured = store.stored_request_budget().await?;
+            let request_timeout = configured
+                .map(|settings| Duration::from_secs(settings.request_timeout_seconds))
+                .unwrap_or(request_timeout);
+            let stream_idle_timeout = configured
+                .map(|settings| Duration::from_secs(settings.stream_idle_timeout_seconds))
+                .unwrap_or(stream_idle_timeout);
             let selected = invocation.request.model.model_id.clone();
             // 两条分支只负责装配 Recorder 与 Provider 流;
             // 事件消费(空闲超时看门狗、记录、错误规范化)对两者完全一致。

@@ -286,12 +286,38 @@ impl Store {
     }
 
     pub async fn official_cursor_traces(&self, limit: i64) -> Result<Vec<CursorRunTraceSummary>> {
+        self.official_cursor_traces_matching(&super::CallMatch {
+            limit,
+            ..super::CallMatch::default()
+        })
+        .await
+    }
+
+    pub(crate) async fn official_cursor_traces_matching(
+        &self,
+        query: &super::CallMatch,
+    ) -> Result<Vec<CursorRunTraceSummary>> {
         let rows = sqlx::query(
             "SELECT * FROM cursor_run_traces
              WHERE route = 'cursor_official'
-             ORDER BY received_at_ms DESC LIMIT ?",
+               AND (? IS NULL OR status = ?)
+               AND (? IS NULL OR conversation_id = ?)
+               AND (? IS NULL OR model_id = ?)
+               AND (? IS NULL OR received_at_ms < ? OR (received_at_ms = ? AND ('cursor:' || request_id) < ?))
+             ORDER BY received_at_ms DESC, request_id DESC
+             LIMIT ?",
         )
-        .bind(limit.clamp(1, 500))
+        .bind(&query.status)
+        .bind(&query.status)
+        .bind(&query.conversation_id)
+        .bind(&query.conversation_id)
+        .bind(&query.model)
+        .bind(&query.model)
+        .bind(query.before_created_at_ms)
+        .bind(query.before_created_at_ms)
+        .bind(query.before_created_at_ms)
+        .bind(&query.before_call_id)
+        .bind(query.limit.clamp(1, 501))
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter().map(trace_from_row).collect()

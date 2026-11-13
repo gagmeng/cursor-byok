@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { api, type CallDetail } from "../../shared/api";
 import { CallDetails } from "./CallDetails";
 import { TitledCard } from "../../shared/ui/TitledCard";
@@ -13,15 +13,23 @@ export function CallDetailsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let timer = 0;
     setDetail(null);
     setError(null);
-    void api.call(callId).then((value) => {
-      if (!cancelled) setDetail(value);
-    }).catch((cause) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
-    });
+    const load = () => {
+      void api.call(callId).then((value) => {
+        if (cancelled) return;
+        setDetail(value);
+        setError(null);
+        if (value.call.status === "running") timer = window.setTimeout(load, 2_000);
+      }).catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    };
+    load();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [callId]);
 
@@ -33,6 +41,7 @@ export function CallDetailsPage() {
 
   return <main className={styles.root}>
     <ScrollableContent className={styles.scroller} contentClassName={styles.content}>
+      <p className={styles.back}><Link to="/calls">{t("返回调用列表")}</Link></p>
       <h1>{detail?.call.display_name ?? t("调用详情")}</h1>
       {content}
     </ScrollableContent>

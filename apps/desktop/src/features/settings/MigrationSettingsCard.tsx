@@ -66,7 +66,7 @@ export function MigrationSettingsCard() {
       <div className={styles.row}>
         <div className={styles.description}>
           <strong>{t("导出配置")}</strong>
-          <small>{t("把模型配置（含 API Key）和插件凭证打包成一个文件。文件包含密钥，请妥善保存。")}</small>
+          <small>{t("把模型配置（含 API Key）、插件凭证和插件模型目录打包成一个文件。文件包含密钥，请妥善保存。")}</small>
         </div>
         <Button variant="secondary" disabled={exporting} onClick={() => void exportFile()}>{t("导出")}</Button>
       </div>

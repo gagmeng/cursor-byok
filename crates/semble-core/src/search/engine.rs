@@ -76,7 +76,7 @@ impl SearchEngine {
     /// Rescans source stamps and incrementally refreshes a prepared index.
     pub fn refresh(&self, repo: &Path, content: &[ContentType]) -> Result<IndexStats> {
         let value = repo.to_string_lossy();
-        let (root, identity) = if value.starts_with("https://") || value.starts_with("http://") {
+        let (root, identity) = if value.starts_with("https://") {
             let remote = RemoteRepository::refresh(&value, &self.config.cache_dir)?;
             (remote.path, remote.identity)
         } else {
@@ -239,7 +239,7 @@ impl SearchEngine {
 
     fn resolve_source(&self, source: &Path) -> Result<(PathBuf, String)> {
         let value = source.to_string_lossy();
-        if value.starts_with("https://") || value.starts_with("http://") {
+        if value.starts_with("https://") {
             let remote = RemoteRepository::acquire(&value, &self.config.cache_dir)?;
             Ok((remote.path, remote.identity))
         } else {

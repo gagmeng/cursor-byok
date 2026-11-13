@@ -15,6 +15,7 @@ const PRICING_SETTINGS_KEY: &str = "token_pricing";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
 const MODEL_BADGES_SETTINGS_KEY: &str = "model_badges";
 const AUTO_REVIEW_MODEL_KEY: &str = "auto_review_model";
+const REQUEST_BUDGET_KEY: &str = "request_budget";
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -40,6 +41,42 @@ pub struct TokenPricingSettings {
     pub output_per_million: f64,
     pub cache_read_per_million: f64,
     pub cache_write_per_million: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestBudgetSettings {
+    pub request_timeout_seconds: u64,
+    pub stream_idle_timeout_seconds: u64,
+}
+
+impl Default for RequestBudgetSettings {
+    fn default() -> Self {
+        Self {
+            request_timeout_seconds: 60 * 60,
+            stream_idle_timeout_seconds: 30 * 60,
+        }
+    }
+}
+
+impl RequestBudgetSettings {
+    pub fn validated(self) -> crate::Result<Self> {
+        if !(30..=6 * 60 * 60).contains(&self.request_timeout_seconds) {
+            return Err(crate::Error::Config(
+                "request timeout must be between 30 and 21600 seconds".into(),
+            ));
+        }
+        if !(15..=60 * 60).contains(&self.stream_idle_timeout_seconds) {
+            return Err(crate::Error::Config(
+                "stream idle timeout must be between 15 and 3600 seconds".into(),
+            ));
+        }
+        if self.stream_idle_timeout_seconds > self.request_timeout_seconds {
+            return Err(crate::Error::Config(
+                "stream idle timeout cannot exceed the request timeout".into(),
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl Default for TokenPricingSettings {
@@ -290,6 +327,34 @@ impl Store {
         let _write = self.writes.lock().await;
         sqlx::query("INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms")
             .bind(EXTERNAL_API_SETTINGS_KEY)
+            .bind(value_json)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        Ok(settings)
+    }
+
+    pub async fn stored_request_budget(&self) -> Result<Option<RequestBudgetSettings>> {
+        let value = sqlx::query_scalar::<_, String>(
+            "SELECT value_json FROM service_settings WHERE setting_key = ?",
+        )
+        .bind(REQUEST_BUDGET_KEY)
+        .fetch_optional(&self.pool)
+        .await?;
+        value
+            .map(|value| serde_json::from_str(&value).map_err(Into::into))
+            .transpose()
+    }
+
+    pub async fn set_request_budget(
+        &self,
+        settings: RequestBudgetSettings,
+    ) -> Result<RequestBudgetSettings> {
+        let settings = settings.validated()?;
+        let value_json = serde_json::to_string(&settings)?;
+        let _write = self.writes.lock().await;
+        sqlx::query("INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms")
+            .bind(REQUEST_BUDGET_KEY)
             .bind(value_json)
             .bind(now_ms())
             .execute(&self.pool)

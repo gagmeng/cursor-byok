@@ -1,4 +1,5 @@
 import type { LlmCall } from "../../shared/api";
+import { callStateText } from "./callLabels";
 import controls from "../../shared/ui/Controls.module.scss";
 import { DataTable, type DataTableColumn } from "../../shared/ui/DataTable";
 import { Icon } from "../../shared/ui/Icon";
@@ -20,7 +21,7 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
             .filter(Boolean)
             .join(" ")}
         >
-          {call.status}
+          {callStateText(call)}
         </span>
       ),
     },
@@ -49,7 +50,7 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
     },
     {
       key: "fast",
-      header: "Fast",
+      header: t("快速"),
       render: (call) => call.fast == null ? "-" : call.fast ? t("是") : t("否"),
     },
 
@@ -57,13 +58,13 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
       key: "call_kind",
       header: t("调用类型"),
       render: (call) =>
-        call.call_kind === "cursor_official" ? t("Cursor 官方") : "LLM",
+        call.call_kind === "cursor_official" ? t("Cursor 官方") : t("模型调用"),
     },
     {
       key: "route",
       header: t("路由"),
       render: (call) =>
-        call.route === "cursor_official" ? t("Cursor 官方") : "BYOK",
+        call.route === "cursor_official" ? t("Cursor 官方") : t("自备模型"),
     },
 
     // { key: "model_hash", header: "Model Hash", render: (call) => value(call.model_hash), title: (call) => call.model_hash ?? undefined },
@@ -73,7 +74,7 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
     // { key: "request_url", header: t("最终请求地址"), render: (call) => call.request_url, title: (call) => call.request_url },
     {
       key: "finish_reason",
-      header: "Finish Reason",
+      header: t("结束原因"),
       render: (call) => value(call.finish_reason),
     },
     { key: "http", header: "HTTP", render: (call) => value(call.http_status) },
@@ -84,47 +85,47 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
     },
     {
       key: "ttfb",
-      header: "TTFB",
+      header: t("首字节"),
       render: (call) => milliseconds(call.ttfb_ms),
     },
     {
       key: "ttfr",
-      header: "TTFR",
+      header: t("首个有效响应"),
       render: (call) => milliseconds(call.ttfr_ms),
     },
     {
       key: "ttft",
-      header: "TTFT",
+      header: t("首个文本"),
       render: (call) => milliseconds(call.ttft_ms),
     },
     {
       key: "input_tokens",
-      header: "Input Token",
+      header: t("输入 Token"),
       render: (call) => value(call.input_tokens),
     },
     {
       key: "output_tokens",
-      header: "Output Token",
+      header: t("输出 Token"),
       render: (call) => value(call.output_tokens),
     },
     {
       key: "total_tokens",
-      header: "Total Token",
+      header: t("总 Token"),
       render: (call) => value(call.total_tokens),
     },
     {
       key: "cache_read",
-      header: "Cache Read",
+      header: t("缓存读取"),
       render: (call) => value(call.cache_read_tokens),
     },
     {
       key: "cache_write",
-      header: "Cache Write",
+      header: t("缓存写入"),
       render: (call) => value(call.cache_write_tokens),
     },
     {
       key: "reasoning_tokens",
-      header: "Reasoning Token",
+      header: t("推理 Token"),
       render: (call) => value(call.reasoning_tokens),
     },
     {
@@ -145,37 +146,37 @@ export function CallTable({ calls, onDetails }: { calls: LlmCall[]; onDetails: (
 
     {
       key: "error_kind",
-      header: "Error Kind",
+      header: t("错误类型"),
       render: (call) => value(call.error_kind),
       title: (call) => call.error_kind ?? undefined,
     },
     {
       key: "error_message",
-      header: "Error Message",
+      header: t("错误信息"),
       render: (call) => value(call.error_message),
       title: (call) => call.error_message ?? undefined,
     },
     {
       key: "call_id",
-      header: "Call ID",
+      header: t("调用 ID"),
       render: (call) => call.call_id,
       title: (call) => call.call_id,
     },
     {
       key: "run_id",
-      header: "Run ID",
+      header: t("运行 ID"),
       render: (call) => call.run_id,
       title: (call) => call.run_id,
     },
     {
       key: "conversation_id",
-      header: "Conversation ID",
+      header: t("会话 ID"),
       render: (call) => call.conversation_id,
       title: (call) => call.conversation_id,
     },
     {
       key: "call_index",
-      header: "Call Index",
+      header: t("调用序号"),
       render: (call) => call.provider_call_index,
     },
     {

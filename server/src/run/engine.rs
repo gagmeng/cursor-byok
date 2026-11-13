@@ -1,6 +1,7 @@
 //! Executes one Run across model cycles, Tool rounds, and message commits.
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
@@ -15,7 +16,7 @@ use crate::{
 
 use super::{
     consume_model_cycle,
-    model_retry::{should_retry, MODEL_RETRY_DELAY},
+    model_retry::{retry_wait, should_retry, MAX_MODEL_RETRIES, MODEL_RETRY_DELAY},
     CommitBarrier, CommitCause, MessagesCommitted, RunCommand, RunEvent, RunFailure, RunOutcome,
     RunPort,
 };
@@ -181,6 +182,13 @@ impl RunEngine {
         // per run. A second refusal after compacting means the current input
         // itself does not fit, and compacting again would only destroy history.
         let mut overflow_compacted = false;
+        let request_budget = match self.store.stored_request_budget().await {
+            Ok(settings) => {
+                Duration::from_secs(settings.unwrap_or_default().request_timeout_seconds)
+            }
+            Err(error) => return (RunOutcome::Failed(error.into()), usage),
+        };
+        let budget_deadline = Instant::now() + request_budget;
         'model: loop {
             if cancellation.is_cancelled() {
                 return (RunOutcome::Cancelled, usage);
@@ -472,6 +480,17 @@ impl RunEngine {
                                 request.model.model_id = fallback.clone();
                                 request.model.display_name = Some(display.clone());
                                 let message = format!("failover to {display}");
+                                let _ = self
+                                    .store
+                                    .note_run_activity(
+                                        prepared.run_id.as_str(),
+                                        &serde_json::json!({
+                                            "kind": "failover",
+                                            "target": display,
+                                        })
+                                        .to_string(),
+                                    )
+                                    .await;
                                 tracing::warn!(
                                     provider_call_index,
                                     checkpoint_id = checkpoint.0,
@@ -498,11 +517,29 @@ impl RunEngine {
                         }
                         retries += 1;
                         let message = failure_message(&cycle_failure.failure);
+                        let remaining = budget_deadline.saturating_duration_since(Instant::now());
+                        let Some(delay) = retry_wait(&message, MODEL_RETRY_DELAY, remaining) else {
+                            return (RunOutcome::Failed(cycle_failure.failure), usage);
+                        };
+                        let _ = self
+                            .store
+                            .note_run_activity(
+                                prepared.run_id.as_str(),
+                                &serde_json::json!({
+                                    "kind": "retry",
+                                    "attempt": retries,
+                                    "limit": MAX_MODEL_RETRIES,
+                                    "delay_seconds": delay.as_secs(),
+                                    "message": message.clone(),
+                                })
+                                .to_string(),
+                            )
+                            .await;
                         tracing::warn!(
                             provider_call_index,
                             retries,
                             max_retries = super::model_retry::MAX_MODEL_RETRIES,
-                            delay_ms = MODEL_RETRY_DELAY.as_millis() as u64,
+                            delay_ms = delay.as_millis() as u64,
                             %message,
                             checkpoint_id = checkpoint.0,
                             "model attempt failed; retrying from current checkpoint"
@@ -520,7 +557,7 @@ impl RunEngine {
                             return (client_failure(), usage);
                         }
 
-                        let delay = tokio::time::sleep(MODEL_RETRY_DELAY);
+                        let delay = tokio::time::sleep(delay);
                         tokio::pin!(delay);
                         loop {
                             tokio::select! {

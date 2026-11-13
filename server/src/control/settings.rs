@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::store::{
     CommitPromptLocale, CommitSettings, DesktopSettings, ExternalApiSettings, ModelBadgeSettings,
-    PortSettings, ProxySettings, ProxySettingsInput, StatisticsStorage, StatisticsStorageScope,
-    TabSettings, TokenPricingSettings,
+    PortSettings, ProxySettings, ProxySettingsInput, RequestBudgetSettings, StatisticsStorage,
+    StatisticsStorageScope, TabSettings, TokenPricingSettings,
 };
 
 use super::{ControlService, ObservabilitySettings};
@@ -24,6 +24,19 @@ pub async fn update(
     Json(settings): Json<ObservabilitySettings>,
 ) -> Result<Json<ObservabilitySettings>> {
     Ok(Json(service.set_observability(settings).await?))
+}
+
+pub async fn get_request_budget(
+    State(service): State<ControlService>,
+) -> Result<Json<RequestBudgetSettings>> {
+    Ok(Json(service.request_budget().await?))
+}
+
+pub async fn update_request_budget(
+    State(service): State<ControlService>,
+    Json(settings): Json<RequestBudgetSettings>,
+) -> Result<Json<RequestBudgetSettings>> {
+    Ok(Json(service.set_request_budget(settings).await?))
 }
 
 pub async fn get_ports(State(service): State<ControlService>) -> Result<Json<PortSettings>> {

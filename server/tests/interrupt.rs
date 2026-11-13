@@ -1358,7 +1358,7 @@ async fn stale_context_injection_is_rejected_without_failing_the_active_run() {
 }
 
 #[tokio::test]
-async fn unsupported_runtime_action_is_ignored_without_failing_the_active_run() {
+async fn unsupported_runtime_action_returns_a_protocol_error() {
     let (_directory, store) = fixtures::temp_store().await;
     let provider = fake_provider::FakeProvider::default();
     let release = provider.push_gated(text_response("active run completed"));
@@ -1411,11 +1411,31 @@ async fn unsupported_runtime_action_is_ignored_without_failing_the_active_run() 
         .await
         .unwrap();
     append_seqno += 1;
-    tokio::task::yield_now().await;
-    release.notify_one();
 
-    drain_successfully(&handle, &mut output, &mut append_seqno).await;
-    assert_eq!(provider.requests().len(), 1);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "unsupported runtime action did not return a protocol error"
+        );
+        let Ok(Some(frame)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), output.recv()).await
+        else {
+            continue;
+        };
+        let (flags, payload) = connect::decode_frames(&frame).unwrap().pop().unwrap();
+        if flags & connect::END_STREAM_FLAG == 0 {
+            acknowledge_kv(&handle, &mut append_seqno, &frame).await;
+            continue;
+        }
+        let text = String::from_utf8_lossy(&payload);
+        assert!(
+            text.contains("invalid_argument") && text.contains("ResumeAction"),
+            "{text}"
+        );
+        break;
+    }
+    drop(release);
 }
 
 #[tokio::test]

@@ -163,6 +163,7 @@ fn proxy_settings_match(settings: &BTreeMap<String, Value>, proxy_url: &str) -> 
         && settings.get(KEYS[3]) == Some(&Value::Bool(true))
         && settings.get(KEYS[4]) == Some(&Value::Bool(true))
         && settings.get(KEYS[5]) == Some(&Value::String(REMOTE_INFERENCE_ROUTE.into()))
+        && !settings.contains_key(NO_PROXY_KEY)
 }
 
 #[cfg(test)]
@@ -199,6 +200,11 @@ mod tests {
         assert!(!proxy_settings_match(&settings, "http://127.0.0.1:43124"));
         apply_proxy_settings(&mut settings, "http://127.0.0.1:43124");
         assert!(proxy_settings_match(&settings, "http://127.0.0.1:43124"));
+        settings.insert(NO_PROXY_KEY.into(), json!(["cursor.sh"]));
+        assert!(
+            !proxy_settings_match(&settings, "http://127.0.0.1:43124"),
+            "a restored noProxy list bypasses the local proxy"
+        );
     }
 
     #[test]
