@@ -518,7 +518,9 @@ impl RunEngine {
                         retries += 1;
                         let message = failure_message(&cycle_failure.failure);
                         let remaining = budget_deadline.saturating_duration_since(Instant::now());
-                        let Some(delay) = retry_wait(&message, MODEL_RETRY_DELAY, remaining) else {
+                        let Some(delay) =
+                            retry_wait(&message, MODEL_RETRY_DELAY, remaining, retries)
+                        else {
                             return (RunOutcome::Failed(cycle_failure.failure), usage);
                         };
                         let _ = self

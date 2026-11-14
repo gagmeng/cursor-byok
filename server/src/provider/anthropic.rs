@@ -265,6 +265,12 @@ impl Provider for AnthropicProvider {
     }
 }
 
+/// Shown where the provider returned only an encrypted thinking block. Without
+/// it the reasoning panel stays empty and the user reads that as "the model did
+/// not think", which is the opposite of what happened.
+const REDACTED_THINKING_NOTICE: &str =
+    "The provider withheld this reasoning block; only an encrypted copy was returned.";
+
 fn close_anthropic_block(
     index: usize,
     kind: &str,
@@ -286,6 +292,11 @@ fn close_anthropic_block(
             }
             vec![ModelEvent::ThinkingEnd]
         }
+        "redacted_thinking" => vec![
+            ModelEvent::ThinkingStart,
+            ModelEvent::ThinkingDelta(REDACTED_THINKING_NOTICE.into()),
+            ModelEvent::ThinkingEnd,
+        ],
         "tool_use" => vec![ModelEvent::ToolCallEnd { index }],
         _ => Vec::new(),
     }
@@ -516,6 +527,41 @@ pub(crate) fn anthropic_usage(value: &Value) -> Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `redacted_thinking` carries only an encrypted payload, so closing it like
+    /// an ordinary thinking block leaves the UI blank and the user concludes the
+    /// model did not reason at all. The placeholder makes the redaction legible;
+    /// the encrypted block itself still has to reach replay so the provider
+    /// accepts the turn again, and the placeholder must never be mistaken for
+    /// model output.
+    #[test]
+    fn redacted_thinking_streams_a_readable_placeholder_without_disturbing_replay() {
+        let mut thinking_text = std::collections::HashMap::new();
+        let mut thinking_signatures = std::collections::HashMap::new();
+        let encrypted = json!({"type": "redacted_thinking", "data": "opaque"});
+        let mut thinking_blocks = vec![encrypted.clone()];
+        let events = close_anthropic_block(
+            0,
+            "redacted_thinking",
+            &mut thinking_text,
+            &mut thinking_signatures,
+            &mut thinking_blocks,
+        );
+
+        assert_eq!(
+            events,
+            vec![
+                ModelEvent::ThinkingStart,
+                ModelEvent::ThinkingDelta(REDACTED_THINKING_NOTICE.into()),
+                ModelEvent::ThinkingEnd,
+            ]
+        );
+        assert_eq!(
+            thinking_blocks,
+            vec![encrypted],
+            "the encrypted block is what replay sends back; the placeholder is UI text and must not replace it"
+        );
+    }
 
     #[test]
     fn a_refusal_never_executes_the_tool_blocks_it_streamed() {

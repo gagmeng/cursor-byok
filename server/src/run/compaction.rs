@@ -45,6 +45,10 @@ pub(super) fn is_context_overflow(message: &str) -> bool {
         || lowered.contains("context window exceeded")
         || lowered.contains("model_context_window_exceeded")
         || lowered.contains("context_length_exceeded")
+        // Google-style gateways spell it this way, distinct from OpenAI's
+        // `context_length_exceeded`; missing it turns a recoverable overflow
+        // into a terminal failure.
+        || lowered.contains("context_too_large")
         || (lowered.contains("maximum context length") && lowered.contains("token"))
 }
 
@@ -301,6 +305,9 @@ mod tests {
         ));
         assert!(is_context_overflow("model_context_window_exceeded"));
         assert!(is_context_overflow("context_length_exceeded"));
+        // Google-style gateways spell it differently; treating it as a terminal
+        // failure would abandon a conversation compaction could have saved.
+        assert!(is_context_overflow("code=context_too_large"));
         assert!(is_context_overflow(
             "This model's maximum context length is 128000 tokens"
         ));

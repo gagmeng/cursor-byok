@@ -390,7 +390,9 @@ fn apply_model(
     }
     if model.reasoning.enabled || model.reasoning.effort.is_some() {
         let mut reasoning = Map::new();
-        reasoning.insert("summary".into(), json!("auto"));
+        // `auto` 让服务端自行决定摘要长度,多数实现只回一句;`detailed`
+        // 是拿到能解释推理过程的思考内容的唯一档位。
+        reasoning.insert("summary".into(), json!("detailed"));
         if let Some(effort) = &model.reasoning.effort {
             reasoning.insert("effort".into(), json!(effort));
         }
@@ -562,6 +564,21 @@ pub(crate) fn responses_usage(value: &Value) -> Usage {
 mod tests {
     use super::*;
     use crate::model::ProviderReplayState;
+
+    fn spec(reasoning: bool) -> crate::model::ModelSpec {
+        let mut spec = crate::model::ModelSpec::new("gpt-5");
+        spec.reasoning.enabled = reasoning;
+        spec
+    }
+
+    /// `auto` 让服务端自行决定摘要长度,多数实现会只给一句;`detailed` 才
+    /// 能拿到足以解释推理过程的思考内容,这是思考可见性的唯一开关。
+    #[test]
+    fn reasoning_requests_a_detailed_summary() {
+        let mut body = json!({});
+        apply_model(&mut body, &spec(true), None).unwrap();
+        assert_eq!(body["reasoning"]["summary"], "detailed");
+    }
 
     #[test]
     fn reasoning_replay_projects_response_items_to_valid_input_items() {
