@@ -390,8 +390,9 @@ fn apply_model(
     }
     if model.reasoning.enabled || model.reasoning.effort.is_some() {
         let mut reasoning = Map::new();
-        // `auto` 让服务端自行决定摘要长度,多数实现只回一句;`detailed`
-        // 是拿到能解释推理过程的思考内容的唯一档位。
+        // `auto` lets the service pick the summary length, and most
+        // implementations answer with a single line; `detailed` is the only
+        // level that returns reasoning worth showing.
         reasoning.insert("summary".into(), json!("detailed"));
         if let Some(effort) = &model.reasoning.effort {
             reasoning.insert("effort".into(), json!(effort));
@@ -571,8 +572,9 @@ mod tests {
         spec
     }
 
-    /// `auto` 让服务端自行决定摘要长度,多数实现会只给一句;`detailed` 才
-    /// 能拿到足以解释推理过程的思考内容,这是思考可见性的唯一开关。
+    /// `auto` lets the service pick the summary length and most implementations
+    /// answer with one line; `detailed` is the single switch that makes the
+    /// reasoning panel show anything worth reading.
     #[test]
     fn reasoning_requests_a_detailed_summary() {
         let mut body = json!({});
