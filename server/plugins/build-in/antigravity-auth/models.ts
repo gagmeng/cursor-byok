@@ -1,6 +1,6 @@
-import type { JsonValue } from "cursor-byok:plugin";
+import type { JsonValue, PluginContext } from "cursor-byok:plugin";
 import type { ModelDefinition, ModelSnapshot, ModelSupport } from "cursor-byok:model";
-import { accountData } from "./resources.ts";
+import { type AccountData, accountData, isTokenExpired, refreshAccount } from "./resources.ts";
 
 export const ANTIGRAVITY_PROD_ENDPOINT = "https://cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_DAILY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
@@ -312,15 +312,56 @@ export function parseAntigravityModels(payload: unknown): ModelDefinition[] {
     });
   }
 
-  // Merge static models from Antigravity catalog that might not be dynamically returned
-  for (const staticModel of STATIC_ANTIGRAVITY_MODELS) {
-    if (!seen.has(staticModel.id)) {
-      seen.add(staticModel.id);
-      models.push(staticModel);
+  // The live catalog is authoritative; the static table only covers a failed
+  // probe. Merging would keep retired models in the directory forever, and
+  // selecting one answers 4xx.
+  return models;
+}
+
+/**
+ * Probes the live catalog and separates "the token was rejected" (401/403, worth
+ * one refresh) from a network failure (worth nothing).
+ */
+async function fetchModelsCatalog(
+  accessToken: string,
+  projectId: string,
+  context: PluginContext,
+): Promise<{ models: ModelDefinition[]; authFailed: boolean }> {
+  const payloads = [
+    JSON.stringify({ project: projectId || "bamboo-precept-lgxtn" }),
+    JSON.stringify({}),
+  ];
+  let authFailed = false;
+
+  for (const endpoint of ANTIGRAVITY_ENDPOINTS) {
+    for (const bodyPayload of payloads) {
+      try {
+        const response = await context.network.fetch(
+          `${endpoint}${FETCH_AVAILABLE_MODELS_PATH}`,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${accessToken}`,
+              "content-type": "application/json",
+              "user-agent": ANTIGRAVITY_USER_AGENT,
+              ...ANTIGRAVITY_CLIENT_HEADERS,
+            },
+            body: bodyPayload,
+          },
+        );
+        if (response.status >= 200 && response.status < 300) {
+          const models = parseAntigravityModels(JSON.parse(response.body));
+          if (models.length > 0) return { models, authFailed: false };
+        } else if (response.status === 401 || response.status === 403) {
+          authFailed = true;
+        }
+      } catch {
+        // One endpoint failing is not the verdict; try the next.
+      }
     }
   }
 
-  return models;
+  return { models: [], authFailed };
 }
 
 export function reasoningEfforts(model: ModelSnapshot): string[] {
@@ -332,42 +373,53 @@ export function reasoningEfforts(model: ModelSnapshot): string[] {
 export const antigravityModels: ModelSupport = {
   list: async ({ resource }, context): Promise<ModelDefinition[]> => {
     if (!resource) return STATIC_ANTIGRAVITY_MODELS;
-    let data;
+    let data: AccountData;
     try {
       data = accountData(resource);
     } catch {
       return STATIC_ANTIGRAVITY_MODELS;
     }
 
-    const payloads = [
-      JSON.stringify({ project: data.projectId || "bamboo-precept-lgxtn" }),
-      JSON.stringify({}),
-    ];
-
-    for (const endpoint of ANTIGRAVITY_ENDPOINTS) {
-      for (const bodyPayload of payloads) {
-        try {
-          const response = await context.network.fetch(
-            `${endpoint}${FETCH_AVAILABLE_MODELS_PATH}`,
-            {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${data.accessToken}`,
-                "content-type": "application/json",
-                "user-agent": ANTIGRAVITY_USER_AGENT,
-                ...ANTIGRAVITY_CLIENT_HEADERS,
-              },
-              body: bodyPayload,
-            },
-          );
-          if (response.status >= 200 && response.status < 300) {
-            const body = JSON.parse(response.body);
-            const models = parseAntigravityModels(body);
-            if (models.length > 0) return models;
-          }
-        } catch {
-          // Continue
+    // Model sync runs here, while the provider's refresh only runs on a chat
+    // call. Without this, an expired token makes every sync answer 401 and fall
+    // back to the static table, so newly released models never show up.
+    let refreshed = false;
+    if (data.refreshToken && isTokenExpired(data)) {
+      try {
+        const patch = await refreshAccount(resource, context);
+        if (patch.privateData) {
+          data = patch.privateData as unknown as AccountData;
+          refreshed = true;
         }
+      } catch {
+        // A failed refresh must not fail the sync; the 401 retry and the static
+        // fallback below still apply.
+      }
+    }
+
+    let catalog = await fetchModelsCatalog(
+      data.accessToken,
+      data.projectId || "bamboo-precept-lgxtn",
+      context,
+    );
+    if (catalog.models.length > 0) return catalog.models;
+
+    // A clock skew can leave a token looking valid while the provider rejects it;
+    // retry exactly once after a refresh.
+    if (catalog.authFailed && !refreshed && data.refreshToken) {
+      try {
+        const patch = await refreshAccount(resource, context);
+        if (patch.privateData) {
+          const fresh = patch.privateData as unknown as AccountData;
+          catalog = await fetchModelsCatalog(
+            fresh.accessToken,
+            fresh.projectId || data.projectId || "bamboo-precept-lgxtn",
+            context,
+          );
+          if (catalog.models.length > 0) return catalog.models;
+        }
+      } catch {
+        // Fall through to the static catalog.
       }
     }
 

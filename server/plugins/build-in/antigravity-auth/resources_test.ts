@@ -36,8 +36,17 @@ Deno.test("imports an array of email and refresh_token credentials", async () =>
 
   assert(result.warnings.length === 0, "the credential file should not produce warnings");
   assert(result.credentials.length === 1, "one credential should be imported");
-  assert(result.credentials[0].displayName === "teocougar@gmail.com", "email should be used as display name");
-  assert(result.credentials[0].accessToken === "access-token", "refresh token should be exchanged for an access token");
-  assert(result.credentials[0].refreshToken === "refresh-token", "refresh token should be preserved");
+  assert(
+    result.credentials[0].displayName === "teocougar@gmail.com",
+    "email should be used as display name",
+  );
+  assert(
+    result.credentials[0].accessToken === "access-token",
+    "refresh token should be exchanged for an access token",
+  );
+  assert(
+    result.credentials[0].refreshToken === "refresh-token",
+    "refresh token should be preserved",
+  );
   assert(requests.length === 1, "the refresh token should be exchanged once");
 });

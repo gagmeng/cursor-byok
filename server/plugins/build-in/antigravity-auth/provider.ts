@@ -199,13 +199,30 @@ function sanitizeSchema(value: unknown): unknown {
   return clean;
 }
 
+/**
+ * Groups models whose thought signatures are interchangeable. A signature is
+ * bound to the model that produced it; replaying one to another family is
+ * rejected with `Corrupted thought signature`. Unknown ids become their own
+ * family, which drops the signature rather than risk a 400.
+ */
+function modelSignatureFamily(modelId: string): string {
+  const lower = modelId.trim().toLowerCase();
+  if (lower.includes("claude")) return "claude";
+  if (lower.startsWith("gemini-4")) return "gemini-4";
+  if (lower.startsWith("gemini-3")) return "gemini-3";
+  if (lower.startsWith("gemini-2")) return "gemini-2";
+  return lower;
+}
+
 function convertToCloudCodeContents(
   instructions: string,
   messages: LlmMessage[],
+  targetModel: string,
 ): {
   contents: Array<{ role: string; parts: Array<Record<string, unknown>> }>;
   systemInstruction?: { role: string; parts: Array<{ text: string }> };
 } {
+  const targetFamily = modelSignatureFamily(targetModel);
   const rawContents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
   let systemText = instructions || "";
 
@@ -230,7 +247,12 @@ function convertToCloudCodeContents(
       const replayVal = msg.replayState?.providerKind === "antigravity"
         ? (msg.replayState.value as Record<string, unknown> | null)
         : null;
-      const sig = typeof replayVal?.thoughtSignature === "string"
+      // A signature from another family, or one stored before families were
+      // recorded, is not accepted by the provider for this model.
+      const replayFamily = typeof replayVal?.modelFamily === "string"
+        ? replayVal.modelFamily
+        : null;
+      const sig = replayFamily === targetFamily && typeof replayVal?.thoughtSignature === "string"
         ? replayVal.thoughtSignature
         : null;
 
@@ -318,6 +340,7 @@ async function streamCloudCode(
   const { contents, systemInstruction } = convertToCloudCodeContents(
     input.request.instructions,
     input.request.messages,
+    actualModel,
   );
 
   const tools = input.request.tools && input.request.tools.length > 0
@@ -531,7 +554,10 @@ async function streamCloudCode(
             output.emit({
               type: "replay-state",
               providerKind: "antigravity",
-              value: { thoughtSignature: lastThoughtSignature },
+              value: {
+                thoughtSignature: lastThoughtSignature,
+                modelFamily: modelSignatureFamily(actualModel),
+              },
             });
             lastThoughtSignature = null;
           }
@@ -570,7 +596,10 @@ async function streamCloudCode(
         output.emit({
           type: "replay-state",
           providerKind: "antigravity",
-          value: { thoughtSignature: lastThoughtSignature },
+          value: {
+            thoughtSignature: lastThoughtSignature,
+            modelFamily: modelSignatureFamily(actualModel),
+          },
         });
       }
       if (finalUsage) {
