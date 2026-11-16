@@ -317,6 +317,72 @@ const ZED_AUTH: &[(&str, &str)] = &[
     ),
 ];
 
+const WORKBUDDY_CN_AUTH: &[(&str, &str)] = &[
+    (
+        "plugin.json",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/plugin.json"
+        )),
+    ),
+    (
+        "main.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/main.ts"
+        )),
+    ),
+    (
+        "config.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/config.ts"
+        )),
+    ),
+    (
+        "headers.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/headers.ts"
+        )),
+    ),
+    (
+        "oauth.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/oauth.ts"
+        )),
+    ),
+    (
+        "resources.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/resources.ts"
+        )),
+    ),
+    (
+        "models.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/models.ts"
+        )),
+    ),
+    (
+        "provider.ts",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/provider.ts"
+        )),
+    ),
+    (
+        "assets/workbuddy.svg",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/plugins/build-in/workbuddy-cn-auth/assets/workbuddy.svg"
+        )),
+    ),
+];
+
 const PLUGINS: &[(&str, &[(&str, &str)])] = &[
     ("codex-auth", CODEX_AUTH),
     ("grok-auth", GROK_AUTH),
@@ -324,6 +390,7 @@ const PLUGINS: &[(&str, &[(&str, &str)])] = &[
     ("zcode-auth", ZCODE_AUTH),
     ("opencode-auth", OPENCODE_AUTH),
     ("zed-auth", ZED_AUTH),
+    ("workbuddy-cn-auth", WORKBUDDY_CN_AUTH),
 ];
 
 /// 把内置插件预装到 installed 目录。manifest 的 version 是缓存键:
@@ -437,6 +504,14 @@ mod tests {
         assert!(root.path().join("zed-auth/plugin.json").is_file());
         assert!(root.path().join("zed-auth/oauth.ts").is_file());
         assert!(root.path().join("zed-auth/assets/zed.svg").is_file());
+        // WorkBuddy 的每一项能力都分布在独立的模块里;漏装 headers.ts 会让
+        // 网关把调用判成非官方客户端而返回 401,表现却像 token 过期。
+        assert!(root.path().join("workbuddy-cn-auth/plugin.json").is_file());
+        assert!(root.path().join("workbuddy-cn-auth/headers.ts").is_file());
+        assert!(root
+            .path()
+            .join("workbuddy-cn-auth/assets/workbuddy.svg")
+            .is_file());
 
         // 版本一致:本地改动与额外文件保持原样,不发生任何写盘。
         std::fs::write(plugin.join("main.ts"), "edited").unwrap();
